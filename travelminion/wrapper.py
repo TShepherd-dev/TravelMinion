@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from travelminion.calendar import CalendarService, FakeCalendarService
+from travelminion.docs import DocsService, FakeDocsService, GoogleDocsService
 from travelminion.files import TripFiles
 from travelminion.interview import (
     InterviewState,
@@ -19,6 +20,7 @@ from travelminion.interview import (
     finalize_brief,
     parse_freeform,
 )
+from travelminion.markdown_to_docs import MarkdownToDocs
 from travelminion.planner import ItineraryPlanner
 from travelminion.research import ResearchEngine
 
@@ -68,6 +70,8 @@ class TravelMinionOrchestrator:
         trip_folder: Path | str | None = None,
         calendar_service: CalendarService | None = None,
         research_engine: ResearchEngine | None = None,
+        docs_service: DocsService | None = None,
+        enable_google_docs: bool = False,
     ) -> None:
         """Initialize orchestrator.
         
@@ -75,6 +79,8 @@ class TravelMinionOrchestrator:
             trip_folder: Path to the Trip folder (defaults to current working directory)
             calendar_service: Inject calendar service (fake for tests, real for production)
             research_engine: Inject research engine (fake for tests, real for production)
+            docs_service: Inject docs service (fake for tests, GoogleDocsService for production)
+            enable_google_docs: If True, export research to Google Doc after phase 2
         """
         self.trip_folder = Path(trip_folder) if trip_folder else Path.cwd()
         self.files = TripFiles(self.trip_folder)
@@ -84,6 +90,15 @@ class TravelMinionOrchestrator:
         
         # Inject or default research engine (no Tavily by default - tests use fake)
         self.research_engine = research_engine or ResearchEngine(tavily_api_key=None)
+        
+        # Docs service for Google Docs export
+        if docs_service is not None:
+            self.docs_service = docs_service
+        elif enable_google_docs:
+            # Use real Google Docs service (will prompt for OAuth)
+            self.docs_service = GoogleDocsService()
+        else:
+            self.docs_service = None
         
         self.state: InterviewState | None = None
         self.result = PipelineResult()
@@ -169,9 +184,71 @@ class TravelMinionOrchestrator:
         activity_list = ApprovedActivityList(activities=activities)
         self.files.write_activities(activity_list)
         
+        # Export to Google Docs if enabled
+        if self.docs_service is not None:
+            self._export_research_to_docs()
+        
         self.result.research_completed = True
         self.result.activities_approved = len(activities)
         return True
+
+    def _export_research_to_docs(self) -> None:
+        """Export research output to Google Doc."""
+        # Read research output
+        suggestions = self.files.read_suggestions()
+        brief = self.files.read_trip_brief()
+        
+        # Build markdown content for Google Doc
+        content_lines = [
+            f"# Research Output: {', '.join(d.destination for d in brief.destinations)}",
+            "",
+            f"Generated for: {brief.start_date} to {brief.end_date}",
+            "",
+            "## Suggestions",
+            "",
+        ]
+        
+        for s in suggestions:
+            content_lines.append(f"### {s.name}")
+            content_lines.append(f"**Destination:** {s.destination}")
+            content_lines.append(f"**Rationale:** {s.rationale}")
+            content_lines.append(f"**Area:** {s.area}")
+            content_lines.append(f"**Duration:** {s.typical_duration}")
+            if s.opening_hours:
+                content_lines.append(f"**Hours:** {s.opening_hours}")
+            if s.approximate_cost:
+                content_lines.append(f"**Cost:** {s.approximate_cost}")
+            if s.season_weather_fit:
+                content_lines.append(f"**Season:** {s.season_weather_fit}")
+            if s.source_link:
+                content_lines.append(f"**Source:** [Link]({s.source_link})")
+            content_lines.append(f"**Confidence:** {s.confidence}")
+            if s.couldnt_verify:
+                content_lines.append(f"**Note:** {s.couldnt_verify}")
+            content_lines.append("")
+        
+        content = "\n".join(content_lines)
+        
+        # Create or update doc
+        title = f"Trip Research: {brief.destinations[0].destination}"
+        
+        if brief.google_docs_doc_id:
+            # Update existing doc
+            self.docs_service.update_doc(brief.google_docs_doc_id, content)
+            doc_id = brief.google_docs_doc_id
+        else:
+            # Create new doc
+            doc_id = self.docs_service.create_doc(title, content)
+            brief.google_docs_doc_id = doc_id
+            self.files.write_trip_brief(brief)
+        
+        # Share with travellers
+        if brief.travellers_to_share:
+            self.docs_service.share_doc(
+                doc_id, 
+                brief.travellers_to_share, 
+                "reader"
+            )
 
     def phase3_plan(self) -> bool:
         """Phase 3: Plan → Itinerary.

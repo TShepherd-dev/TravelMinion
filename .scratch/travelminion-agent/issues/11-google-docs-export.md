@@ -4,17 +4,19 @@
 
 **Blocked by:** 03 (Research + Approved Activity List), 07 (Calendar boundary + post step)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] GoogleDocsService class (thin abstraction over Google Docs API)
-- [ ] FakeDocsService for tests (in-memory, no network)
-- [ ] OAuth setup: new scope `https://www.googleapis.com/auth/documents`
-- [ ] create_or_update_doc(title: str, content: str, doc_id: str | None) → doc_id
-- [ ] share_doc(doc_id: str, emails: list[str]) → read-only access
-- [ ] Markdown → Google Docs structure (headings, lists, links, tables)
-- [ ] Store doc_id in trip-brief.md or metadata file
-- [ ] Tests: create doc, update doc, share doc, Markdown formatting
-- [ ] SKILL.md updated to document Google Docs export
+- [x] GoogleDocsService class (thin abstraction over Google Docs API)
+- [x] FakeDocsService for tests (in-memory, no network)
+- [x] OAuth setup: new scope `https://www.googleapis.com/auth/documents`
+- [x] create_or_update_doc(title: str, content: str, doc_id: str | None) → doc_id
+- [x] share_doc(doc_id: str, emails: list[str]) → read-only access
+- [x] Markdown → Google Docs structure (headings, lists, links, tables)
+- [x] Store doc_id in trip-brief.md or metadata file
+- [x] Tests: create doc, update doc, share doc, Markdown formatting
+- [x] SKILL.md updated to document Google Docs export
+- [x] Wired into wrapper (enable_google_docs=True)
+- [x] Auto-export after phase2_research when enabled
 
 ## Implementation Notes
 
@@ -58,4 +60,8 @@ class DocsService(ABC):
 - Test share logic
 - Test doc_id persistence in trip folder
 
----
+**Wire-up:**
+- `TravelMinionOrchestrator(enable_google_docs=True)` enables auto-export
+- Or inject `docs_service=GoogleDocsService()` for production
+- Doc ID stored in `TripBrief.google_docs_doc_id`
+

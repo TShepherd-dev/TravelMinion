@@ -4,12 +4,20 @@
 
 **Blocked by:** 01 (skill skeleton + file-interface primitives), 03 (research + Approved Activity List)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] The plan phase runs on demand, consuming only the Approved Activity List.
-- [ ] Activity Days are produced in order with each activity time-blocked (start/end, place, duration, transit-to-next).
-- [ ] The plan respects opening hours and groups activities for geographic coherence.
-- [ ] The plan leaves room for rest and meals.
-- [ ] Travel style maps to a target daily density of blocks as above.
-- [ ] The Itinerary is written as a diff-able Markdown proposal the traveller can edit.
-- [ ] Tests at the Trip-folder file interface feed a known Approved Activity List and assert the produced Itinerary (ordered days, time-blocks, density, coherence, opening-hours respect, rest/meals).
+- [x] The plan phase runs on demand, consuming only the Approved Activity List.
+- [x] Activity Days are produced in order with each activity time-blocked (start/end, place, duration, transit-to-next).
+- [x] The plan respects opening hours and groups activities for geographic coherence.
+- [x] The plan leaves room for rest and meals.
+- [x] Travel style maps to a target daily density of blocks as above.
+- [x] The Itinerary is written as a diff-able Markdown proposal the traveller can edit.
+- [x] Tests at the Trip-folder file interface feed a known Approved Activity List and assert the produced Itinerary (ordered days, time-blocks, density, coherence, opening-hours respect, rest/meals).
+
+**Implementation notes:**
+- `ItineraryPlanner` class takes TripBrief + ApprovedActivityList → Itinerary
+- Groups activities by area for geographic coherence
+- Schedules with opening hours respect, meal breaks (lunch 12-1, dinner from 5pm)
+- Travel style density: packed=5, casual=2, nothing=0 (free days)
+- Multi-destination: inserts TravelDay between destinations
+- 23 planner tests added, 116 total passing

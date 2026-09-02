@@ -26,6 +26,35 @@ from travelminion.models import (
     TripBrief,
 )
 
+# Weather/season keywords that indicate outdoor exposure
+OUTDOOR_KEYWORDS = [
+    "beach", "hiking", "garden", "park", "outdoor", "viewpoint", "terrace",
+    "rooftop", "boat", "cruise", "ferry", "waterfront", "pier", "boardwalk",
+    "zoo", "safari", "botanical", "lake", "river", "mountain", "valley",
+    "cliff", "coast", "bay", "harbor", "outdoor market", "open-air",
+]
+
+# Indoor activity keywords
+INDOOR_KEYWORDS = [
+    "museum", "gallery", "indoor", "theater", "cinema", "shopping mall",
+    "aquarium", "planetarium", "library", "archive", "cathedral", "church",
+    "temple", "shrine", "palace", "castle", "tower", "observation deck",
+]
+
+# Common indoor fallback suggestions by activity type
+INDOOR_FALLBACKS = {
+    "beach": "Visit nearby aquarium or coastal museum",
+    "hiking": "Explore local visitor center or nature museum",
+    "garden": "Tour botanical conservatory or greenhouse",
+    "park": "Visit nearby museum or indoor market",
+    "outdoor": "Find covered market or nearby gallery",
+    "zoo": "Indoor exhibit hall or nearby science museum",
+    "boat": "Aquarium or maritime museum",
+    "waterfront": "Indoor food market or shopping arcade",
+    "viewpoint": "Observation deck in tall building",
+    "market": "Covered shopping arcade or food hall",
+}
+
 
 def _parse_transit_duration(transit_str: str | None) -> int | None:
     """Parse transit duration string to minutes.
@@ -66,6 +95,34 @@ DEFAULT_ACTIVITY_DURATION = 120  # 2 hours
 DEFAULT_TRANSIT = 30  # 30 minutes
 MEAL_BREAK = 60  # 1 hour
 LONG_HAUL_THRESHOLD = 360  # 6 hours - flights or long travel become Free Days
+
+
+def _get_indoor_fallback(activity: ApprovedActivity) -> str | None:
+    """Get indoor fallback suggestion for weather-exposed activity.
+    
+    Analyzes activity name, area, and notes to detect outdoor exposure,
+    then suggests an appropriate indoor alternative.
+    
+    Returns None if activity appears to be already indoor or no fallback found.
+    """
+    text = f"{activity.name} {activity.area} {activity.notes or ''}".lower()
+    
+    # Check if already indoor
+    for keyword in INDOOR_KEYWORDS:
+        if keyword in text:
+            return None  # Already indoor, no fallback needed
+    
+    # Check if outdoor and find appropriate fallback
+    for keyword, fallback in INDOOR_FALLBACKS.items():
+        if keyword in text:
+            return fallback
+    
+    # Generic outdoor detection
+    for keyword in OUTDOOR_KEYWORDS:
+        if keyword in text:
+            return "Find nearby indoor attraction or cafe"
+    
+    return None
 
 
 def _parse_duration(duration_str: str) -> int:
@@ -221,6 +278,9 @@ def _schedule_activity(
     if end_minutes > EVENING_END:
         end_minutes = min(end_minutes, EVENING_END)
     
+    # Get indoor fallback if activity is weather-exposed
+    indoor_fallback = activity.indoor_fallback or _get_indoor_fallback(activity)
+    
     return TimeBlock(
         start_time=_minutes_to_time(start_minutes),
         end_time=_minutes_to_time(end_minutes),
@@ -228,7 +288,7 @@ def _schedule_activity(
         place=activity.area,
         duration=activity.typical_duration,
         transit_to_next=f"{transit_minutes} min",
-        indoor_fallback=activity.indoor_fallback,
+        indoor_fallback=indoor_fallback,
     )
 
 

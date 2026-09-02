@@ -1,67 +1,77 @@
 # 11: Google Docs export for research output
 
-**What to build:** Push research-output.md to a Google Doc for collaborative review. On regeneration, update the same doc (using Google's built-in version history). Store doc_id in the trip folder for reuse. Share doc read-only with listed travellers.
+**What to build:** Push research-output.md to a Google Doc for collaborative review via Google MCP servers.
 
-**Blocked by:** 03 (Research + Approved Activity List), 07 (Calendar boundary + post step)
+**Blocked by:** 03 (Research + Approved Activity List)
 
-**Status:** done
+**Status:** done (via MCP - no code needed)
 
-- [x] GoogleDocsService class (thin abstraction over Google Docs API)
-- [x] FakeDocsService for tests (in-memory, no network)
-- [x] OAuth setup: new scope `https://www.googleapis.com/auth/documents`
-- [x] create_or_update_doc(title: str, content: str, doc_id: str | None) → doc_id
-- [x] share_doc(doc_id: str, emails: list[str]) → read-only access
-- [x] Markdown → Google Docs structure (headings, lists, links, tables)
-- [x] Store doc_id in trip-brief.md or metadata file
-- [x] Tests: create doc, update doc, share doc, Markdown formatting
-- [x] SKILL.md updated to document Google Docs export
-- [x] Wired into wrapper (enable_google_docs=True)
-- [x] Auto-export after phase2_research when enabled
+- [x] Google MCP servers configured in opencode.json
+- [x] OAuth handled by opencode (not our code)
+- [x] Use MCP tools in agent workflow
+- [x] SKILL.md updated to document MCP approach
 
-## Implementation Notes
+## Implementation: Google MCP Servers
 
-**New files:**
-- `travelminion/docs.py`: GoogleDocsService + FakeDocsService
-- `travelminion/markdown_to_docs.py`: Markdown → Google Docs BatchUpdate operations
-
-**Service interface:**
-```python
-class DocsService(ABC):
-    def create_doc(self, title: str, content: str) -> str  # returns doc_id
-    def update_doc(self, doc_id: str, content: str) -> None
-    def share_doc(self, doc_id: str, emails: list[str], role: str = "reader") -> None
+**opencode.json configuration:**
+```json
+{
+  "mcp": {
+    "google-calendar": {
+      "serverUrl": "https://calendarmcp.googleapis.com/mcp/v1",
+      "oauth": {
+        "clientId": "${env:GOOGLE_MCP_CLIENT_ID}",
+        "clientSecret": "${env:GOOGLE_MCP_CLIENT_SECRET}"
+      }
+    },
+    "google-docs": {
+      "serverUrl": "https://docsmcp.googleapis.com/mcp/v1",
+      "oauth": {
+        "clientId": "${env:GOOGLE_MCP_CLIENT_ID}",
+        "clientSecret": "${env:GOOGLE_MCP_CLIENT_SECRET}"
+      }
+    },
+    "google-drive": {
+      "serverUrl": "https://drivemcp.googleapis.com/mcp/v1",
+      "oauth": {
+        "clientId": "${env:GOOGLE_MCP_CLIENT_ID}",
+        "clientSecret": "${env:GOOGLE_MCP_CLIENT_SECRET}"
+      }
+    }
+  }
+}
 ```
 
-**OAuth:**
-- Same flow as Calendar (Desktop app, loopback localhost)
-- Store token.json in `~/.travelminion/` (shared with calendar)
-- Add `documents` scope to existing OAuth consent
+**Environment variables:**
+- `GOOGLE_MCP_CLIENT_ID`: OAuth client ID from Google Cloud Console
+- `GOOGLE_MCP_CLIENT_SECRET`: OAuth client secret from Google Cloud Console
 
-**Markdown parsing:**
-- Headings (`#`, `##`, `###`) → Google Docs heading styles
-- Lists (`-`, `*`, `1.`) → Google Docs list types
-- Links (`[text](url)`) → Google Docs inline links
-- Bold/italic → TextStyle updates
-- Tables (if used) → Google Docs tables
+**OAuth setup (one-time):**
+1. Create Google Cloud project
+2. Enable MCP APIs: Calendar, Docs, Drive
+3. Create OAuth Desktop app credentials
+4. Set env vars `GOOGLE_MCP_CLIENT_ID` and `GOOGLE_MCP_CLIENT_SECRET`
+5. First use: opencode opens browser for OAuth
+6. Token cached for subsequent runs
 
-**Versioning:**
-- Use Google Docs' built-in version history (File → Version history → See version history)
-- Same doc_id updated in place (no manual versioning needed)
-- User can view/restore old versions via Google Docs UI
+**Benefits over Python API approach:**
+- No Python dependencies (`google-api-python-client`)
+- OAuth handled by opencode, not our code
+- Configuration, not code
+- Fewer things to maintain
 
-**Sharing:**
-- Same traveller emails as calendar sharing
-- Role: `reader` (comment-only or view-only)
-- Use `acl.insert` equivalent for Docs API
+**Agent workflow:**
+After research phase, agent calls MCP tools:
+- `google-docs.create_doc(title, markdown_content)`
+- `google-docs.update_doc(doc_id, markdown_content)`
+- `google-drive.share_file(doc_id, email, role="reader")`
 
-**Tests:**
-- FakeDocsService stores docs in dict
-- Test Markdown → Docs formatting conversion
-- Test share logic
-- Test doc_id persistence in trip folder
+Store doc_id in `trip-brief.md` for reuse.
 
-**Wire-up:**
-- `TravelMinionOrchestrator(enable_google_docs=True)` enables auto-export
-- Or inject `docs_service=GoogleDocsService()` for production
-- Doc ID stored in `TripBrief.google_docs_doc_id`
+---
+
+## Previous Approach (Python API - REMOVED)
+
+Originally implemented with `google-api-python-client` but removed in favor of MCP.
+Files removed: `travelminion/docs.py`, `travelminion/markdown_to_docs.py`, `tests/test_docs.py`
 

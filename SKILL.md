@@ -50,7 +50,7 @@ Run research on demand. The skill fetches live destination information and produ
 
 **Custom sources:** If you provided preferred source URLs, these are fetched first via Jina AI Reader and appear at the top of your suggestions list, marked with `source_name: custom`.
 
-**Google Docs export:** Optionally export `research-output.md` to a Google Doc for collaborative review. The same doc is updated on re-run (using Google's built-in version history) and shared read-only with listed travellers. Doc ID is stored in `trip-brief.md` for reuse.
+**Google Docs export (via MCP):** If Google MCP servers are configured in opencode.json, export `research-output.md` to a Google Doc for collaborative review. Uses opencode's built-in OAuth handling - no code setup needed.
 
 Review the suggestions, then edit `activities.md`:
 - Set `approved: true` for items you want in the plan

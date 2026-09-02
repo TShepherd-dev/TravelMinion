@@ -255,8 +255,27 @@ class TripFiles:
         if not interests or interests == [None] or interests == [""]:
             data["interests"] = DEFAULT_INTERESTS
 
+        # Handle destinations - could be list[str] (old) or list[DestinationStop] (new)
+        destinations = data.get("destinations", [])
+        if destinations and isinstance(destinations[0], str):
+            # Old format: convert to DestinationStop
+            data["destinations"] = [
+                {"destination": str(d), "days": 1, "order": i}
+                for i, d in enumerate(destinations)
+            ]
+        elif destinations and isinstance(destinations[0], dict):
+            # New format: ensure dict structure
+            data["destinations"] = [
+                {
+                    "destination": d.get("destination"),
+                    "days": d.get("days", 1),
+                    "order": d.get("order", i),
+                }
+                for i, d in enumerate(destinations)
+            ]
+
         # Clean up empty list items
-        for field in ["destinations", "interests", "dietary", "travellers_to_share"]:
+        for field in ["interests", "dietary", "travellers_to_share"]:
             if field in data and isinstance(data[field], list):
                 data[field] = [x for x in data[field] if x]
 
@@ -271,6 +290,14 @@ class TripFiles:
         data["start_date"] = _serialize_date(brief.start_date)
         data["end_date"] = _serialize_date(brief.end_date)
         data["travel_style"] = brief.travel_style.value
+        
+        # Convert destinations to dict format for YAML
+        if brief.destinations:
+            data["destinations"] = [
+                {"destination": d.destination, "days": d.days, "order": d.order}
+                for d in brief.destinations
+            ]
+        
         self._write_file(self.TRIP_BRIEF, data)
 
     def trip_brief_exists(self) -> bool:

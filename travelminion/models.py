@@ -17,7 +17,7 @@ from datetime import time as time_type
 from enum import Enum
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 # Default interests when user gives only a one-liner
 DEFAULT_INTERESTS: list[str] = [
@@ -43,6 +43,19 @@ class TravelStyle(str, Enum):
     NOTHING = "nothing"
 
 
+class DestinationStop(BaseModel):
+    """A destination with explicit days and order.
+    
+    Replaces simple list[str] to allow:
+    - Explicit ordering (Japan -> Korea vs Korea -> Japan)
+    - Days per destination for research scaling
+    """
+
+    destination: str = Field(..., description="Destination name (city/country)")
+    days: int = Field(..., ge=1, description="Number of days at this destination")
+    order: int | None = Field(None, description="Explicit order (0-indexed, optional)")
+
+
 class TripBrief(BaseModel):
     """Persisted capture of the clarifying interview.
     
@@ -51,8 +64,8 @@ class TripBrief(BaseModel):
     """
 
     # Required fields
-    destinations: list[str] = Field(
-        ..., min_length=1, description="List of destination cities/countries"
+    destinations: list[DestinationStop] = Field(
+        ..., min_length=1, description="List of destination stops with days"
     )
     start_date: date_type = Field(..., description="Trip start date")
     end_date: date_type = Field(..., description="Trip end date")
@@ -80,6 +93,76 @@ class TripBrief(BaseModel):
         if start and v < start:
             raise ValueError("end_date must not be before start_date")
         return v
+
+    @field_validator("destinations")
+    @classmethod
+    def validate_destinations(
+        cls, v: list[DestinationStop] | list[str] | str
+    ) -> list[DestinationStop]:
+        """Handle backward compatibility: allow list[str] or single str.
+        
+        If old format (list[str]), convert to DestinationStop with even days.
+        """
+        if not v:
+            raise ValueError("destinations must not be empty")
+
+        # Handle single string (legacy edge case)
+        if isinstance(v, str):
+            return [DestinationStop(destination=v, days=1, order=0)]
+
+        # Handle list of strings (legacy format)
+        if isinstance(v, list):
+            if len(v) == 0:
+                raise ValueError("destinations must not be empty")
+            
+            # Check if it's list[str] (old format)
+            if all(isinstance(x, str) for x in v):
+                # Convert to DestinationStop with even split
+                # Days will be calculated later from date range
+                return [
+                    DestinationStop(destination=str(dest), days=1, order=i)
+                    for i, dest in enumerate(v)
+                ]
+            
+            # It's already list[DestinationStop] - cast to satisfy mypy
+            return [
+                DestinationStop(
+                    destination=d.destination,
+                    days=d.days,
+                    order=d.order,
+                )
+                for d in v
+            ]
+
+        raise ValueError("destinations must be a list")
+
+    @model_validator(mode="after")
+    def calculate_days(self) -> TripBrief:
+        """Calculate and distribute days if not explicitly set.
+        
+        If DestinationStop days don't sum to trip duration, redistribute evenly.
+        """
+        if not self.destinations:
+            return self
+
+        total_days = (self.end_date - self.start_date).days + 1
+        if total_days < 1:
+            return self
+
+        current_sum = sum(d.days for d in self.destinations)
+        
+        # If days already sum correctly, keep explicit values
+        if current_sum == total_days:
+            return self
+
+        # Redistribute evenly, giving remainder to first destinations
+        base_days = total_days // len(self.destinations)
+        remainder = total_days % len(self.destinations)
+        
+        for i, stop in enumerate(self.destinations):
+            stop.days = base_days + (1 if i < remainder else 0)
+
+        return self
 
 
 class Suggestion(BaseModel):

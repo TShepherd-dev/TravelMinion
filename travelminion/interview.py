@@ -490,6 +490,13 @@ def finalize_brief(state: InterviewState) -> TripBrief:
     # Apply defaults for any still-missing fields
     destinations = state.destinations if state.destinations else ["TBD"]
     
+    # Convert to DestinationStop format
+    from travelminion.models import DestinationStop
+    destination_stops = [
+        DestinationStop(destination=d, days=1, order=i)
+        for i, d in enumerate(destinations)
+    ] if destinations and isinstance(destinations[0], str) else destinations
+    
     # Parse dates from strings to date objects
     start_date: date | None = _parse_date_object(state.start_date)
     end_date: date | None = _parse_date_object(state.end_date)
@@ -503,7 +510,7 @@ def finalize_brief(state: InterviewState) -> TripBrief:
         end_date = start_date + timedelta(days=7)
 
     return TripBrief(
-        destinations=destinations,
+        destinations=destination_stops,
         start_date=start_date,
         end_date=end_date,
         interests=interests,

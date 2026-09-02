@@ -288,7 +288,9 @@ class TestFinalizeBrief:
         )
         brief = finalize_brief(state)
         assert isinstance(brief, TripBrief)
-        assert brief.destinations == ["Tokyo", "Kyoto"]
+        assert len(brief.destinations) == 2
+        assert brief.destinations[0].destination == "Tokyo"
+        assert brief.destinations[1].destination == "Kyoto"
         assert brief.start_date == date(2027, 4, 1)
         assert brief.end_date == date(2027, 4, 10)
         assert brief.travel_style == TravelStyle.PACKED
@@ -323,7 +325,8 @@ class TestFinalizeBrief:
         state = InterviewState()
         brief = finalize_brief(state)
         assert isinstance(brief, TripBrief)
-        assert brief.destinations == ["TBD"]
+        assert len(brief.destinations) == 1
+        assert brief.destinations[0].destination == "TBD"
         assert brief.interests == DEFAULT_INTERESTS
         assert brief.travel_style == TravelStyle.CASUAL
 
@@ -359,7 +362,8 @@ class TestInterviewIntegration:
         # Finalize
         brief = finalize_brief(state)
         assert isinstance(brief, TripBrief)
-        assert "Japan" in brief.destinations
+        destination_names = [d.destination for d in brief.destinations]
+        assert "Japan" in destination_names
 
     def test_forces_completion_after_max_rounds(self):
         state = InterviewState(max_rounds=2)

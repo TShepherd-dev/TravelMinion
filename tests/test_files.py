@@ -95,13 +95,18 @@ class TestTripBrief:
     """Test Trip Brief read/write operations."""
 
     def test_read_valid_trip_brief(self, tmp_path: Path) -> None:
+        
         content = """\
 ---
 # Trip Brief
 ---
 destinations:
-  - Tokyo
-  - Kyoto
+  - destination: Tokyo
+    days: 7
+    order: 0
+  - destination: Kyoto
+    days: 7
+    order: 1
 start_date: 2027-04-01
 end_date: 2027-04-14
 interests:
@@ -116,7 +121,10 @@ group_size: 2
         files = TripFiles(tmp_path)
         brief = files.read_trip_brief()
 
-        assert brief.destinations == ["Tokyo", "Kyoto"]
+        assert len(brief.destinations) == 2
+        assert brief.destinations[0].destination == "Tokyo"
+        assert brief.destinations[0].days == 7
+        assert brief.destinations[1].destination == "Kyoto"
         assert brief.start_date == date(2027, 4, 1)
         assert brief.end_date == date(2027, 4, 14)
         assert brief.interests == ["temples", "food"]
@@ -155,7 +163,8 @@ travel_style: packed
 # Trip Brief
 ---
 destinations:
-  - Rome
+  - destination: Rome
+    days: 5
 start_date: 2027-05-10
 end_date: 2027-05-01
 interests:
@@ -170,9 +179,14 @@ travel_style: casual
 
     def test_write_trip_brief_roundtrip(self, tmp_path: Path) -> None:
         files = TripFiles(tmp_path)
+        
+        from travelminion.models import DestinationStop
 
         original = TripBrief(
-            destinations=["Seoul", "Busan"],
+            destinations=[
+                DestinationStop(destination="Seoul", days=5, order=0),
+                DestinationStop(destination="Busan", days=5, order=1),
+            ],
             start_date=date(2027, 6, 1),
             end_date=date(2027, 6, 10),
             interests=["K-pop", "street food"],
@@ -538,13 +552,15 @@ class TestValidation:
     """Test validation and error handling."""
 
     def test_validate_all_valid_files(self, tmp_path: Path) -> None:
+        from travelminion.models import DestinationStop
+        
         files = TripFiles(tmp_path)
         files.seed_templates()
 
         # Write valid data
         files.write_trip_brief(
             TripBrief(
-                destinations=["Paris"],
+                destinations=[DestinationStop(destination="Paris", days=7, order=0)],
                 start_date=date(2027, 5, 1),
                 end_date=date(2027, 5, 7),
                 interests=["art"],

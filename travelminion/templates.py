@@ -11,9 +11,15 @@ TRIP_BRIEF_TEMPLATE = """\
 ---
 
 # Destinations
-# List the places you want to visit (required)
+# List the places you want to visit with days at each (required)
+# Format: destination (name), days (number), order (optional, for explicit ordering)
 destinations:
-  - 
+  - destination: 
+    days: 3
+    order: 0
+  - destination: 
+    days: 4
+    order: 1
 
 # Dates
 # When does your trip start and end? (required, format: YYYY-MM-DD)

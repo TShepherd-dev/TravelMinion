@@ -1,0 +1,16 @@
+# Google Calendar OAuth secrets - keep out of git (design decision: stored outside trip folder)
+credentials.json
+token.json
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

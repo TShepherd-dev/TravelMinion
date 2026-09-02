@@ -95,6 +95,9 @@ class TripBrief(BaseModel):
     travellers_to_share: list[str] | None = Field(
         None, description="Email addresses for read-only calendar sharing"
     )
+    google_docs_doc_id: str | None = Field(
+        None, description="Google Doc ID for research output export"
+    )
 
     @field_validator("end_date")
     @classmethod

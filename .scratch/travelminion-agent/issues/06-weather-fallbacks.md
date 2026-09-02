@@ -4,9 +4,17 @@
 
 **Blocked by:** 04 (base Itinerary planner)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Weather-exposed activities in the Itinerary are annotated with an indoor fallback note.
-- [ ] The annotation consumes the Suggestion's season/weather-fit tag from the Approved Activity List.
-- [ ] Fallback notes appear as annotations in the Itinerary and do not create extra calendar events.
-- [ ] Covered by a test at the file-interface seam asserting the fallback note on a weather-exposed activity.
+- [x] Weather-exposed activities in the Itinerary are annotated with an indoor fallback note.
+- [x] The annotation consumes the Suggestion's season/weather-fit tag from the Approved Activity List.
+- [x] Fallback notes appear as annotations in the Itinerary and do not create extra calendar events.
+- [x] Covered by a test at the file-interface seam asserting the fallback note on a weather-exposed activity.
+
+**Implementation notes:**
+- OUTDOOR_KEYWORDS: beach, hiking, garden, park, outdoor, viewpoint, terrace, rooftop, boat, cruise, waterfront, zoo, etc.
+- INDOOR_KEYWORDS: museum, gallery, indoor, theater, aquarium, cathedral, castle, tower, etc.
+- INDOOR_FALLBACKS: context-aware suggestions (beach→aquarium, hiking→visitor center, garden→conservatory)
+- _get_indoor_fallback() analyzes activity.name + area + notes
+- Planner auto-populates TimeBlock.indoor_fallback during scheduling
+- 17 tests added, 145 total passing

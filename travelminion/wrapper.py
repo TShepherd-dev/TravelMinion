@@ -65,19 +65,19 @@ class TravelMinionOrchestrator:
 
     def __init__(
         self,
-        trip_folder: Path | str,
+        trip_folder: Path | str | None = None,
         calendar_service: CalendarService | None = None,
         research_engine: ResearchEngine | None = None,
     ) -> None:
         """Initialize orchestrator.
         
         Args:
-            trip_folder: Path to the Trip folder
+            trip_folder: Path to the Trip folder (defaults to current working directory)
             calendar_service: Inject calendar service (fake for tests, real for production)
             research_engine: Inject research engine (fake for tests, real for production)
         """
-        self.trip_folder = Path(trip_folder)
-        self.files = TripFiles(trip_folder)
+        self.trip_folder = Path(trip_folder) if trip_folder else Path.cwd()
+        self.files = TripFiles(self.trip_folder)
         
         # Inject or default calendar service
         self.calendar_service = calendar_service or FakeCalendarService()

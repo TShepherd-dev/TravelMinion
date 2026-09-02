@@ -86,6 +86,10 @@ class TripBrief(BaseModel):
     group_size: int | None = Field(None, ge=1, description="Number of travellers")
     mobility: str | None = Field(None, description="Mobility constraints")
     dietary: list[str] | None = Field(None, description="Dietary restrictions")
+    preferred_sources: list[str] = Field(
+        default_factory=list,
+        description="Preferred URLs to research (official sites, blogs, guides)",
+    )
 
     # Metadata
     travellers_to_share: list[str] | None = Field(
@@ -191,6 +195,9 @@ class Suggestion(BaseModel):
         None, description="When this is best visited, weather considerations"
     )
     source_link: str | None = Field(None, description="URL where info was found")
+    source_name: Literal["custom", "tavily", "jina", "ddgs"] = Field(
+        default="tavily", description="Which source this came from"
+    )
     confidence: Literal["high", "medium", "low"] = Field(
         "medium", description="How solid this suggestion is"
     )

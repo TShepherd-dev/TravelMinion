@@ -38,6 +38,7 @@ The skill asks targeted follow-up questions for anything missing (destinations, 
 - Mobility constraints
 - Dietary restrictions
 - Traveller emails (for calendar sharing)
+- **Preferred sources**: URLs to research directly (official tourism sites, specific blogs, attraction websites)
 
 ### Phase 2: Research → Suggestions → Approved Activity List
 
@@ -45,7 +46,9 @@ Run research on demand. The skill fetches live destination information and produ
 
 - Name, rationale (tied to your interests), area, duration
 - Opening hours, approximate cost, season/weather fit
-- Source link, confidence marker, "couldn't verify" notes
+- Source link, source name (custom/tavily/ddgs), confidence marker, "couldn't verify" notes
+
+**Custom sources:** If you provided preferred source URLs, these are fetched first via Jina AI Reader and appear at the top of your suggestions list, marked with `source_name: custom`.
 
 Review the suggestions, then edit `activities.md`:
 - Set `approved: true` for items you want in the plan

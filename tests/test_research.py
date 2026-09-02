@@ -100,7 +100,7 @@ class TestSuggestionShaping:
         )
         
         engine = ResearchEngine()
-        suggestion = engine._raw_to_suggestion(raw, ["local culture", "photography"])
+        suggestion = engine._raw_to_suggestion(raw, ["local culture", "photography"], "TestCity")
         assert suggestion is not None
         suggestion.destination = "Kyoto"
         
@@ -126,7 +126,7 @@ class TestSuggestionShaping:
         )
         
         engine = ResearchEngine()
-        suggestion = engine._raw_to_suggestion(raw, ["history"])
+        suggestion = engine._raw_to_suggestion(raw, ["history"], "TestCity")
         assert suggestion is not None
         suggestion.destination = "Tokyo"
         
@@ -151,7 +151,7 @@ class TestSuggestionShaping:
         )
         
         engine = ResearchEngine()
-        suggestion = engine._raw_to_suggestion(raw, [])
+        suggestion = engine._raw_to_suggestion(raw, [], "TestCity")
         assert suggestion is not None
         
         assert suggestion.typical_duration == "2-3 hours"
@@ -169,7 +169,7 @@ class TestSuggestionShaping:
         )
         
         engine = ResearchEngine()
-        suggestion = engine._raw_to_suggestion(raw, [])
+        suggestion = engine._raw_to_suggestion(raw, [], "TestCity")
         assert suggestion is not None
         
         assert suggestion.typical_duration == "1-2 hours"
@@ -187,7 +187,7 @@ class TestSuggestionShaping:
         )
         
         engine = ResearchEngine()
-        suggestion = engine._raw_to_suggestion(raw, ["food and dining", "culture"])
+        suggestion = engine._raw_to_suggestion(raw, ["food and dining", "culture"], "TestCity")
         assert suggestion is not None
         
         assert "food and dining" in suggestion.rationale
@@ -205,7 +205,7 @@ class TestSuggestionShaping:
         )
         
         engine = ResearchEngine()
-        suggestion = engine._raw_to_suggestion(raw, ["extreme sports"])
+        suggestion = engine._raw_to_suggestion(raw, ["extreme sports"], "TestCity")
         assert suggestion is not None
         
         assert suggestion.rationale == "Popular destination attraction"
@@ -442,7 +442,7 @@ class TestSeasonInference:
         )
         
         engine = ResearchEngine()
-        suggestion = engine._raw_to_suggestion(raw, [])
+        suggestion = engine._raw_to_suggestion(raw, [], "TestCity")
         assert suggestion is not None
         
         assert suggestion.season_weather_fit is not None
@@ -461,7 +461,7 @@ class TestSeasonInference:
         )
         
         engine = ResearchEngine()
-        suggestion = engine._raw_to_suggestion(raw, [])
+        suggestion = engine._raw_to_suggestion(raw, [], "TestCity")
         assert suggestion is not None
         
         assert suggestion.season_weather_fit is not None
@@ -480,7 +480,7 @@ class TestSeasonInference:
         )
         
         engine = ResearchEngine()
-        suggestion = engine._raw_to_suggestion(raw, [])
+        suggestion = engine._raw_to_suggestion(raw, [], "TestCity")
         assert suggestion is not None
         
         assert suggestion.season_weather_fit is not None
@@ -510,3 +510,131 @@ class TestDuckDuckGoSource:
         
         # May be empty if network fails, but should not raise
         assert isinstance(results, list)
+
+
+class TestCustomSources:
+    """Test custom source URL fetching."""
+
+    def test_jina_fetch_source_url_success(self) -> None:
+        """JinaSource.fetch_source_url extracts data from custom URL."""
+        from unittest.mock import MagicMock, patch
+
+        from travelminion.research import JinaSource
+        
+        mock_content = """# Tokyo Official Tourism Site
+This is the official guide to Tokyo attractions.
+Opening hours: 9am-6pm daily
+Admission: Free
+"""
+        
+        with patch('httpx.get') as mock_get:
+            mock_response = MagicMock()
+            mock_response.text = mock_content
+            mock_response.raise_for_status.return_value = None
+            mock_get.return_value = mock_response
+            
+            jina = JinaSource()
+            result = jina.fetch_source_url("https://example.com/tokyo", "Tokyo", ["culture"])
+            
+            assert result is not None
+            assert result.title == "Tokyo Official Tourism Site"
+            assert result.source_name == "custom"
+            assert result.raw_hours == "9am-6pm"
+            assert result.raw_cost == "Free"
+
+    def test_jina_fetch_source_url_failure(self) -> None:
+        """JinaSource.fetch_source_url returns None on fetch failure."""
+        from travelminion.research import JinaSource
+        
+        jina = JinaSource()
+        
+        # Invalid URL should return None, not raise
+        result = jina.fetch_source_url("not-a-valid-url", "Tokyo", ["culture"])
+        
+        assert result is None
+
+    def test_research_destination_with_custom_sources(self) -> None:
+        """ResearchEngine includes custom sources in results."""
+        
+        # Create engine with no Tavily (force custom sources)
+        engine = ResearchEngine(tavily_api_key=None)
+        
+        # Mock Jina to return a result
+        class MockJina(JinaSource):
+            def fetch_source_url(self, url, destination, interests):
+                return RawResult(
+                    title="Custom Attraction",
+                    url=url,
+                    snippet="From custom source",
+                    area="Custom area",
+                    raw_hours="9am-5pm",
+                    raw_cost="$10",
+                    source_name="custom",
+                    extra_metadata={},
+                )
+        
+        engine.jina = MockJina()  # type: ignore
+        
+        suggestions = engine.research_destination(
+            destination="Tokyo",
+            interests=["culture"],
+            days=3,
+            preferred_sources=["https://example.com"],
+        )
+        
+        # Should have at least the custom source result
+        assert len(suggestions) > 0
+        custom_suggestions = [s for s in suggestions if s.source_name == "custom"]
+        assert len(custom_suggestions) > 0
+        assert custom_suggestions[0].name == "Custom Attraction"
+
+    def test_research_all_with_preferred_sources(self) -> None:
+        """ResearchEngine.research_all passes preferred_sources to each destination."""
+        from datetime import date
+
+        from travelminion.models import DestinationStop, TripBrief
+        
+        brief = TripBrief(
+            destinations=[
+                DestinationStop(destination="Tokyo", days=3, order=0),
+                DestinationStop(destination="Kyoto", days=4, order=1),
+            ],
+            start_date=date(2027, 4, 1),
+            end_date=date(2027, 4, 8),
+            interests=["temples", "food"],
+            travel_style="casual",
+            preferred_sources=["https://example.com/tokyo", "https://example.com/kyoto"],
+        )
+        
+        engine = ResearchEngine(tavily_api_key=None)
+        
+        # Mock Jina
+        class MockJina(JinaSource):
+            def fetch_source_url(self, url, destination, interests):
+                return RawResult(
+                    title=f"Custom {destination}",
+                    url=url,
+                    snippet=f"Custom source for {destination}",
+                    area="Area",
+                    raw_hours=None,
+                    raw_cost=None,
+                    source_name="custom",
+                    extra_metadata={},
+                )
+        
+        engine.jina = MockJina()  # type: ignore
+        
+        suggestions = engine.research_all(brief)
+        
+        # Should have custom suggestions for both destinations
+        tokyo_custom = [
+            s for s in suggestions 
+            if s.source_name == "custom" and s.destination == "Tokyo"
+        ]
+        kyoto_custom = [
+            s for s in suggestions 
+            if s.source_name == "custom" and s.destination == "Kyoto"
+        ]
+        
+        assert len(tokyo_custom) > 0
+        assert len(kyoto_custom) > 0

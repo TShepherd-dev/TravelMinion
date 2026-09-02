@@ -22,3 +22,8 @@
 - Scaling: 4-6 suggestions per day, capped at 12 per destination
 - Season inference from date range (spring/summer/autumn/winter)
 - 22 tests added, 93 total passing
+
+**Unblocked tickets:**
+- ✅ 04-09 (all complete)
+- 🔜 10 (Custom sources for research) — extends this research step
+- 🔜 11 (Google Docs export) — exports this research output

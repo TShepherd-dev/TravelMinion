@@ -6,6 +6,7 @@ Produces Suggestions with confidence markers and "couldn't verify" notes.
 
 from __future__ import annotations
 
+import re
 from abc import ABC, abstractmethod
 from typing import Any, Literal
 
@@ -27,7 +28,7 @@ class RawResult(BaseModel):
     area: str | None = Field(None, description="Neighbourhood/area if extractable")
     raw_hours: str | None = Field(None, description="Raw opening hours text")
     raw_cost: str | None = Field(None, description="Raw cost/pricing text")
-    source_name: Literal["tavily", "jina", "ddgs"] = Field(
+    source_name: Literal["tavily", "jina", "ddgs", "custom"] = Field(
         ..., description="Which source this came from"
     )
     extra_metadata: dict[str, Any] = Field(
@@ -163,12 +164,11 @@ class TavilySource(ResearchSource):
         
         return None
 
-    def _extract_hours(self, text: str) -> str | None:
+    @staticmethod
+    def _extract_hours(text: str) -> str | None:
         """Extract opening hours from text."""
         if not text:
             return None
-        
-        import re
         
         # Patterns like "9am-6pm", "9:00-18:00", "open daily"
         patterns = [
@@ -184,12 +184,11 @@ class TavilySource(ResearchSource):
         
         return None
 
-    def _extract_cost(self, text: str) -> str | None:
+    @staticmethod
+    def _extract_cost(text: str) -> str | None:
         """Extract cost/pricing from text."""
         if not text:
             return None
-        
-        import re
         
         # Look for currency symbols + numbers, or words like "free"
         if "free" in text.lower():
@@ -249,6 +248,48 @@ class JinaSource(ResearchSource):
             return response.text
         except (httpx.HTTPError, httpx.RequestError):
             return None
+
+    def fetch_source_url(
+        self, url: str, destination: str, interests: list[str]
+    ) -> RawResult | None:
+        """Fetch a custom source URL and extract attraction data.
+        
+        Args:
+            url: URL to fetch
+            destination: Destination context (for extraction)
+            interests: Traveller interests (for rationale)
+            
+        Returns:
+            RawResult or None on failure
+        """
+        content = self.fetch_url(url)
+        if not content:
+            return None
+        
+        # Extract title from first line or markdown heading
+        lines = content.split("\n")
+        title = ""
+        for line in lines[:10]:
+            if line.startswith("# "):
+                title = line[2:].strip()
+                break
+        if not title:
+            title = lines[0][:100] if lines else "Custom source"
+        
+        # Try to extract hours and cost from content
+        raw_hours = TavilySource._extract_hours(content)
+        raw_cost = TavilySource._extract_cost(content)
+        
+        return RawResult(
+            title=title,
+            url=url,
+            snippet=lines[1][:200] if len(lines) > 1 else "",
+            area=None,  # Hard to extract without more context
+            raw_hours=raw_hours,
+            raw_cost=raw_cost,
+            source_name="custom",
+            extra_metadata={"destination": destination, "interests": interests},
+        )
 
 
 class DuckDuckGoSource(ResearchSource):
@@ -321,6 +362,7 @@ class ResearchEngine:
         destination: str,
         interests: list[str],
         days: int,
+        preferred_sources: list[str] | None = None,
     ) -> list[Suggestion]:
         """Research a single destination.
         
@@ -328,6 +370,7 @@ class ResearchEngine:
             destination: Destination name
             interests: Traveller interests
             days: Days at destination (for scaling)
+            preferred_sources: Optional list of custom URLs to fetch
             
         Returns:
             List of Suggestions with confidence markers
@@ -335,6 +378,19 @@ class ResearchEngine:
         # Try sources in priority order
         raw_results: list[RawResult] = []
         sources_tried: list[str] = []
+        
+        # First, fetch custom sources if provided
+        custom_results: list[RawResult] = []
+        if preferred_sources:
+            for url in preferred_sources:
+                try:
+                    result = self.jina.fetch_source_url(url, destination, interests)
+                    if result:
+                        custom_results.append(result)
+                except Exception:
+                    # Skip malformed URLs gracefully
+                    # Log for debugging: print(f"Custom source failed: {url} - {e}")
+                    pass
         
         if self.tavily:
             results = self.tavily.search(destination, interests, days)
@@ -351,8 +407,11 @@ class ResearchEngine:
         if raw_results and self.jina:
             raw_results = self._enrich_with_jina(raw_results)
         
+        # Prepend custom sources to results (they appear first)
+        raw_results = custom_results + raw_results
+        
         # Shape into Suggestions
-        suggestions = self._shape_suggestions(raw_results, interests, days)
+        suggestions = self._shape_suggestions(raw_results, interests, days, destination)
         
         return suggestions
 
@@ -372,6 +431,7 @@ class ResearchEngine:
                 dest_stop.destination,
                 trip_brief.interests,
                 dest_stop.days,
+                preferred_sources=trip_brief.preferred_sources,
             )
             all_suggestions.extend(suggestions)
         
@@ -434,6 +494,7 @@ class ResearchEngine:
         raw_results: list[RawResult],
         interests: list[str],
         days: int,
+        destination: str,
     ) -> list[Suggestion]:
         """Shape raw results into Suggestions with confidence scoring.
         
@@ -454,7 +515,7 @@ class ResearchEngine:
             seen_titles.add(title_lower)
             
             # Shape into Suggestion
-            suggestion = self._raw_to_suggestion(raw, interests)
+            suggestion = self._raw_to_suggestion(raw, interests, destination)
             if suggestion:
                 suggestions.append(suggestion)
             
@@ -472,13 +533,13 @@ class ResearchEngine:
         return suggestions
 
     def _raw_to_suggestion(
-        self, raw: RawResult, interests: list[str]
+        self, raw: RawResult, interests: list[str], destination: str
     ) -> Suggestion | None:
         """Convert single RawResult to Suggestion."""
         if not raw.title:
             return None
         
-        # Determine rationale from interests
+        # Determine rationale tied to interests
         rationale = self._build_rationale(raw, interests)
         
         # Extract fields
@@ -497,9 +558,10 @@ class ResearchEngine:
             approximate_cost=raw.raw_cost,
             season_weather_fit=season_weather,
             source_link=raw.url if raw.url else None,
+            source_name=raw.source_name,
             confidence=confidence,
             couldnt_verify=couldnt_verify,
-            destination="",  # Caller sets this
+            destination=destination,
         )
 
     def _build_rationale(self, raw: RawResult, interests: list[str]) -> str:

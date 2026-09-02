@@ -131,12 +131,14 @@ days: []
 RESEARCH_OUTPUT_TEMPLATE = """\
 ---
 # Research Output
-# Suggestions from live research. Review and approve items to add to your Activity List.
+# Suggestions from live research + your custom sources.
+# Review and approve items to add to your Activity List.
 ---
 
 # Suggestions by Destination
 # Each suggestion has: name, rationale, area, typical_duration, opening_hours,
-# approximate_cost, season_weather_fit, source_link, confidence, couldnt_verify
+# approximate_cost, season_weather_fit, source_link, source_name, confidence, couldnt_verify
+# source_name: "custom" (your URL), "tavily" (search), or "ddgs" (fallback)
 
 suggestions: []
 
@@ -151,6 +153,7 @@ suggestions: []
 #     approximate_cost: Free
 #     season_weather_fit: Beautiful year-round, early morning best for photos
 #     source_link: https://inari.jp/en/
+#     source_name: custom
 #     confidence: high
 #     couldnt_verify: null
 """

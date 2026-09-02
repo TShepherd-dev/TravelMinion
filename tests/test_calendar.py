@@ -509,6 +509,279 @@ class TestPostItinerary:
         assert len(all_events) == 2
 
 
+class TestRebuildImpact:
+    """Test rebuild impact analysis."""
+
+    def test_calculate_impact_no_existing_events(self) -> None:
+        """Impact when calendar is empty - all events will be added."""
+        fake = FakeCalendarService()
+        cal_id = fake.create_calendar("Test Calendar")
+        
+        itinerary = Itinerary(
+            days=[
+                ActivityDay(
+                    date=date(2027, 4, 1),
+                    destination="Tokyo",
+                    time_blocks=[
+                        TimeBlock(
+                            start_time=time(9, 0),
+                            end_time=time(12, 0),
+                            activity_name="Museum",
+                            place="Ueno",
+                            duration="3 hours",
+                        ),
+                        TimeBlock(
+                            start_time=time(14, 0),
+                            end_time=time(17, 0),
+                            activity_name="Park",
+                            place="Shinjuku",
+                            duration="3 hours",
+                        ),
+                    ],
+                )
+            ]
+        )
+        
+        impact = fake.calculate_rebuild_impact(itinerary, cal_id)
+        
+        assert impact.days_to_update == ["2027-04-01"]
+        assert impact.events_to_update == 0
+        assert impact.events_to_add == 2
+        assert "0 updated, 2 added" in impact.summary
+
+    def test_calculate_impact_all_existing(self) -> None:
+        """Impact when all events already exist - all will be updated."""
+        fake = FakeCalendarService()
+        cal_id = fake.create_calendar("Test Calendar")
+        
+        # Post initial itinerary
+        itinerary1 = Itinerary(
+            days=[
+                ActivityDay(
+                    date=date(2027, 4, 1),
+                    destination="Tokyo",
+                    time_blocks=[
+                        TimeBlock(
+                            start_time=time(9, 0),
+                            end_time=time(12, 0),
+                            activity_name="Museum",
+                            place="Ueno",
+                            duration="3 hours",
+                        ),
+                    ],
+                )
+            ]
+        )
+        fake.post_itinerary(itinerary1, cal_id)
+        
+        # Calculate impact of rebuilding same day
+        itinerary2 = Itinerary(
+            days=[
+                ActivityDay(
+                    date=date(2027, 4, 1),
+                    destination="Tokyo",
+                    time_blocks=[
+                        TimeBlock(
+                            start_time=time(10, 0),
+                            end_time=time(13, 0),
+                            activity_name="Updated Museum",
+                            place="Ueno",
+                            duration="3 hours",
+                        ),
+                    ],
+                )
+            ]
+        )
+        
+        impact = fake.calculate_rebuild_impact(itinerary2, cal_id)
+        
+        assert impact.days_to_update == ["2027-04-01"]
+        assert impact.events_to_update == 1
+        assert impact.events_to_add == 0
+        assert "1 updated, 0 added" in impact.summary
+
+    def test_calculate_impact_mixed(self) -> None:
+        """Impact with some existing, some new events."""
+        fake = FakeCalendarService()
+        cal_id = fake.create_calendar("Test Calendar")
+        
+        # Post day 1
+        itinerary1 = Itinerary(
+            days=[
+                ActivityDay(
+                    date=date(2027, 4, 1),
+                    destination="Tokyo",
+                    time_blocks=[
+                        TimeBlock(
+                            start_time=time(9, 0),
+                            end_time=time(12, 0),
+                            activity_name="Day 1",
+                            place="Tokyo",
+                            duration="3 hours",
+                        ),
+                    ],
+                )
+            ]
+        )
+        fake.post_itinerary(itinerary1, cal_id)
+        
+        # Calculate impact of rebuilding with day 1 + day 2
+        itinerary2 = Itinerary(
+            days=[
+                ActivityDay(
+                    date=date(2027, 4, 1),
+                    destination="Tokyo",
+                    time_blocks=[
+                        TimeBlock(
+                            start_time=time(9, 0),
+                            end_time=time(12, 0),
+                            activity_name="Day 1 Updated",
+                            place="Tokyo",
+                            duration="3 hours",
+                        ),
+                    ],
+                ),
+                ActivityDay(
+                    date=date(2027, 4, 2),
+                    destination="Kyoto",
+                    time_blocks=[
+                        TimeBlock(
+                            start_time=time(10, 0),
+                            end_time=time(13, 0),
+                            activity_name="Day 2 New",
+                            place="Kyoto",
+                            duration="3 hours",
+                        ),
+                    ],
+                ),
+            ]
+        )
+        
+        impact = fake.calculate_rebuild_impact(itinerary2, cal_id)
+        
+        assert len(impact.days_to_update) == 2
+        assert impact.events_to_update == 1  # Day 1 updated
+        assert impact.events_to_add == 1  # Day 2 added
+
+    def test_confirm_and_rebuild(self) -> None:
+        """Execute rebuild after impact analysis."""
+        fake = FakeCalendarService()
+        cal_id = fake.create_calendar("Test Calendar")
+        
+        # Initial itinerary
+        itinerary1 = Itinerary(
+            days=[
+                ActivityDay(
+                    date=date(2027, 4, 1),
+                    destination="Tokyo",
+                    time_blocks=[
+                        TimeBlock(
+                            start_time=time(9, 0),
+                            end_time=time(12, 0),
+                            activity_name="Original",
+                            place="Tokyo",
+                            duration="3 hours",
+                        ),
+                    ],
+                )
+            ]
+        )
+        fake.post_itinerary(itinerary1, cal_id)
+        
+        # Calculate impact
+        itinerary2 = Itinerary(
+            days=[
+                ActivityDay(
+                    date=date(2027, 4, 1),
+                    destination="Tokyo",
+                    time_blocks=[
+                        TimeBlock(
+                            start_time=time(10, 0),
+                            end_time=time(13, 0),
+                            activity_name="Updated",
+                            place="Tokyo",
+                            duration="3 hours",
+                        ),
+                    ],
+                )
+            ]
+        )
+        impact = fake.calculate_rebuild_impact(itinerary2, cal_id)
+        
+        # Confirm and rebuild
+        result = fake.confirm_and_rebuild(itinerary2, cal_id, impact)
+        
+        assert result.events_updated == 1
+        assert result.events_posted == 0
+        
+        # Verify event was updated (not duplicated)
+        events = fake.list_events(cal_id, "2027-04-01", "2027-04-01")
+        assert len(events) == 1
+        assert events[0].summary == "Updated"
+
+    def test_rebuild_with_travel_days(self) -> None:
+        """Rebuild including travel days."""
+        fake = FakeCalendarService()
+        cal_id = fake.create_calendar("Test Calendar")
+        
+        # Initial with travel day
+        itinerary1 = Itinerary(
+            days=[
+                TravelDay(
+                    date=date(2027, 4, 1),
+                    destination="Kyoto",
+                    travel_leg=TravelLeg(
+                        from_destination="Tokyo",
+                        to_destination="Kyoto",
+                        mode="train",
+                        duration="2h15m",
+                    ),
+                    afternoon_activity=TimeBlock(
+                        start_time=time(15, 0),
+                        end_time=time(17, 0),
+                        activity_name="Explore Gion",
+                        place="Gion",
+                        duration="2 hours",
+                    ),
+                )
+            ]
+        )
+        fake.post_itinerary(itinerary1, cal_id)
+        
+        # Rebuild with updated travel day
+        itinerary2 = Itinerary(
+            days=[
+                TravelDay(
+                    date=date(2027, 4, 1),
+                    destination="Kyoto",
+                    travel_leg=TravelLeg(
+                        from_destination="Tokyo",
+                        to_destination="Kyoto",
+                        mode="train",
+                        duration="2h15m",
+                    ),
+                    afternoon_activity=TimeBlock(
+                        start_time=time(16, 0),
+                        end_time=time(18, 0),
+                        activity_name="Updated Gion Walk",
+                        place="Gion",
+                        duration="2 hours",
+                    ),
+                )
+            ]
+        )
+        
+        impact = fake.calculate_rebuild_impact(itinerary2, cal_id)
+        assert impact.events_to_update == 1
+        
+        result = fake.confirm_and_rebuild(itinerary2, cal_id, impact)
+        assert result.events_updated == 1
+        
+        events = fake.list_events(cal_id, "2027-04-01", "2027-04-01")
+        assert len(events) == 1
+        assert "Updated Gion Walk" in events[0].summary
+
+
 class TestCalendarResult:
     """Test CalendarResult dataclass."""
 

@@ -18,6 +18,7 @@ from __future__ import annotations
 import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from datetime import date as date_type
 from datetime import datetime
 from typing import Literal
 
@@ -51,6 +52,19 @@ class CalendarResult:
     events_deleted: int = 0
     shares_created: int = 0
     errors: list[str] = field(default_factory=list)
+
+
+@dataclass
+class RebuildImpact:
+    """Impact analysis before a rebuild.
+    
+    Shows what will change before confirming.
+    """
+    days_to_update: list[str]  # ISO date strings
+    events_to_update: int
+    events_to_add: int
+    events_to_delete: int
+    summary: str
 
 
 class CalendarService(ABC):
@@ -156,6 +170,37 @@ class CalendarService(ABC):
             itinerary: Itinerary to post
             calendar_id: Calendar to post to
             rebuild: If True, update/replace existing events
+        
+        Returns:
+            CalendarResult with counts
+        """
+        pass
+
+    @abstractmethod
+    def calculate_rebuild_impact(
+        self, itinerary: Itinerary, calendar_id: str
+    ) -> RebuildImpact:
+        """Calculate what a rebuild will change.
+        
+        Args:
+            itinerary: New itinerary to compare
+            calendar_id: Calendar to check
+        
+        Returns:
+            RebuildImpact showing days/events affected
+        """
+        pass
+
+    @abstractmethod
+    def confirm_and_rebuild(
+        self, itinerary: Itinerary, calendar_id: str, impact: RebuildImpact
+    ) -> CalendarResult:
+        """Execute a rebuild after impact analysis.
+        
+        Args:
+            itinerary: New itinerary to post
+            calendar_id: Calendar to rebuild
+            impact: Previously calculated impact (validation)
         
         Returns:
             CalendarResult with counts
@@ -297,8 +342,65 @@ class FakeCalendarService(CalendarService):
 
         return result
 
+    def calculate_rebuild_impact(
+        self, itinerary: Itinerary, calendar_id: str
+    ) -> RebuildImpact:
+        """Calculate what will change in a rebuild."""
+        if calendar_id not in self.calendars:
+            return RebuildImpact(
+                days_to_update=[],
+                events_to_update=0,
+                events_to_add=0,
+                events_to_delete=0,
+                summary="Calendar does not exist",
+            )
+
+        days_to_update = []
+        events_to_update = 0
+        events_to_add = 0
+
+        for day in itinerary.days:
+            if not day.day_date:
+                continue
+
+            day_str = day.day_date.isoformat()
+            days_to_update.append(day_str)
+
+            if isinstance(day, ActivityDay):
+                for i in range(len(day.time_blocks)):
+                    existing = self._find_existing_event(calendar_id, day.day_date, i)
+                    if existing:
+                        events_to_update += 1
+                    else:
+                        events_to_add += 1
+
+            elif isinstance(day, TravelDay) and day.afternoon_activity:
+                existing = self._find_existing_event(calendar_id, day.day_date, 0)
+                if existing:
+                    events_to_update += 1
+                else:
+                    events_to_add += 1
+
+        summary = f"{events_to_update} updated, {events_to_add} added"
+        summary += f" across {len(days_to_update)} days"
+        return RebuildImpact(
+            days_to_update=days_to_update,
+            events_to_update=events_to_update,
+            events_to_add=events_to_add,
+            events_to_delete=0,
+            summary=summary,
+        )
+
+    def confirm_and_rebuild(
+        self, itinerary: Itinerary, calendar_id: str, impact: RebuildImpact
+    ) -> CalendarResult:
+        """Execute rebuild after impact analysis (validation step)."""
+        # Just call post_itinerary with rebuild=True
+        # The impact was already calculated and confirmed by user
+        return self.post_itinerary(itinerary, calendar_id, rebuild=True)
+
     def _find_existing_event(
-        self, calendar_id: str, day_date: datetime | None, index: int
+        self, calendar_id: str, day_date: date_type | None, index: int
     ) -> CalendarEvent | None:
         """Find existing event for a day/index (for rebuild)."""
         if not day_date or calendar_id not in self.events:
@@ -574,25 +676,74 @@ class GoogleCalendarService(CalendarService):
 
         return result
 
-    def _find_existing_event(
-        self, calendar_id: str, day_date: datetime | None, index: int
-    ) -> CalendarEvent | None:
-        """Find existing event for rebuild (Google Calendar version)."""
-        if not day_date:
-            return None
+    def calculate_rebuild_impact(
+        self, itinerary: Itinerary, calendar_id: str
+    ) -> RebuildImpact:
+        """Calculate what will change in a rebuild (Google Calendar version)."""
+        self._ensure_credentials()
         
-        # Search events on that date
-        events = self.list_events(calendar_id, day_date.isoformat(), day_date.isoformat())
-        
-        # Find event at this index (assumes ordering by start time)
-        sorted_events = sorted(events, key=lambda e: e.start_datetime or datetime.min)
-        if index < len(sorted_events):
-            return sorted_events[index]
-        
+        days_to_update = []
+        events_to_update = 0
+        events_to_add = 0
+
+        for day in itinerary.days:
+            if not day.day_date:
+                continue
+
+            day_str = day.day_date.isoformat()
+            days_to_update.append(day_str)
+
+            if isinstance(day, ActivityDay):
+                for i in range(len(day.time_blocks)):
+                    existing = self._find_existing_event(calendar_id, day.day_date, i)
+                    if existing:
+                        events_to_update += 1
+                    else:
+                        events_to_add += 1
+
+            elif isinstance(day, TravelDay) and day.afternoon_activity:
+                existing = self._find_existing_event(calendar_id, day.day_date, 0)
+                if existing:
+                    events_to_update += 1
+                else:
+                    events_to_add += 1
+
+        summary = f"{events_to_update} updated, {events_to_add} added"
+        summary += f" across {len(days_to_update)} days"
+        return RebuildImpact(
+            days_to_update=days_to_update,
+            events_to_update=events_to_update,
+            events_to_add=events_to_add,
+            events_to_delete=0,
+            summary=summary,
+        )
+
+    def confirm_and_rebuild(
+        self, itinerary: Itinerary, calendar_id: str, impact: RebuildImpact
+    ) -> CalendarResult:
+        """Execute rebuild after impact analysis."""
+        return self.post_itinerary(itinerary, calendar_id, rebuild=True)
+
+
+def _find_existing_event(
+    calendar_service: CalendarService, calendar_id: str, day_date: date_type | None, index: int
+) -> CalendarEvent | None:
+    """Find existing event for rebuild (shared helper)."""
+    if not day_date:
         return None
+    
+    # Search events on that date
+    events = calendar_service.list_events(calendar_id, day_date.isoformat(), day_date.isoformat())
+    
+    # Find event at this index (assumes ordering by start time)
+    sorted_events = sorted(events, key=lambda e: e.start_datetime or datetime.min)
+    if index < len(sorted_events):
+        return sorted_events[index]
+    
+    return None
 
 
-def _timeblock_to_event(block: TimeBlock, day_date: datetime | None, index: int) -> CalendarEvent:
+def _timeblock_to_event(block: TimeBlock, day_date: date_type | None, index: int) -> CalendarEvent:
     """Convert a TimeBlock to a CalendarEvent.
     
     Combines date + time from the block.

@@ -59,7 +59,7 @@ class DestinationStop(BaseModel):
     # Optional transit from the previous destination
     transit_from_previous: str | None = Field(
         None,
-        description="Rough transit details from previous destination (e.g., 'flight 3h', 'train 2h15m')"
+        description="Rough transit (e.g., 'flight 3h', 'train 2h15m')",
     )
 
 

@@ -50,7 +50,7 @@ Run research on demand. The skill fetches live destination information and produ
 
 **Custom sources:** If you provided preferred source URLs, these are fetched first via Jina AI Reader and appear at the top of your suggestions list, marked with `source_name: custom`.
 
-**Google Docs export (via MCP):** If Google MCP servers are configured in opencode.json, export `research-output.md` to a Google Doc for collaborative review. Uses opencode's built-in OAuth handling - no code setup needed.
+**Collaboration:** Share `research-output.md` with your travel group via email, Slack, Dropbox, etc. They can review the markdown file directly.
 
 Review the suggestions, then edit `activities.md`:
 - Set `approved: true` for items you want in the plan
@@ -77,19 +77,6 @@ Run planning on demand. The skill reads `activities.md` and generates `itinerary
 - Indoor fallback notes for weather-exposed activities
 
 The itinerary is a proposal — edit freely before posting.
-
-### Phase 4: Post → Per-trip Calendar
-
-On explicit confirmation, the skill:
-1. Creates a dedicated Per-trip Calendar
-2. Shares it read-only with listed travellers
-3. Posts one event per activity with time blocks
-
-Calendar auth is set up once and reused across trips.
-
-### Rebuild
-
-After editing `activities.md`, run a rebuild to regenerate affected days. The skill shows which days will be overwritten and asks for confirmation. Events are updated in place (not duplicated).
 
 ## File Structure
 

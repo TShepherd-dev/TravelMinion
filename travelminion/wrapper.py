@@ -11,7 +11,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from travelminion.calendar import CalendarService, FakeCalendarService
 from travelminion.files import TripFiles
 from travelminion.interview import (
     InterviewState,
@@ -31,9 +30,6 @@ class PipelineResult:
     research_completed: bool = False
     activities_approved: int = 0
     itinerary_planned: bool = False
-    calendar_posted: bool = False
-    calendar_id: str | None = None
-    events_posted: int = 0
     errors: list[str] | None = None
 
     def has_errors(self) -> bool:
@@ -50,8 +46,6 @@ class PipelineResult:
             parts.append(f"✓ {self.activities_approved} activities approved")
         if self.itinerary_planned:
             parts.append("✓ Itinerary planned")
-        if self.calendar_posted:
-            parts.append(f"✓ Calendar posted ({self.events_posted} events)")
         if self.has_errors():
             parts.append(f"✗ Errors: {', '.join(self.errors)}")
         return "\n".join(parts) if parts else "No actions taken"
@@ -66,21 +60,16 @@ class TravelMinionOrchestrator:
     def __init__(
         self,
         trip_folder: Path | str | None = None,
-        calendar_service: CalendarService | None = None,
         research_engine: ResearchEngine | None = None,
     ) -> None:
         """Initialize orchestrator.
         
         Args:
             trip_folder: Path to the Trip folder (defaults to current working directory)
-            calendar_service: Inject calendar service (fake for tests, real for production)
             research_engine: Inject research engine (fake for tests, real for production)
         """
         self.trip_folder = Path(trip_folder) if trip_folder else Path.cwd()
         self.files = TripFiles(self.trip_folder)
-        
-        # Inject or default calendar service
-        self.calendar_service = calendar_service or FakeCalendarService()
         
         # Inject or default research engine (no Tavily by default - tests use fake)
         self.research_engine = research_engine or ResearchEngine(tavily_api_key=None)
@@ -189,64 +178,6 @@ class TravelMinionOrchestrator:
         self.result.itinerary_planned = True
         return True
 
-    def phase4_post(self, confirm: bool = True) -> bool:
-        """Phase 4: Post → Per-trip Calendar.
-        
-        Args:
-            confirm: If False, skip posting (dry run)
-            
-        Returns:
-            True if calendar was posted successfully
-        """
-        if not confirm:
-            return False
-        
-        itinerary = self.files.read_itinerary()
-        
-        # Create calendar first
-        calendar_id = self.calendar_service.create_calendar(
-            f"Trip {itinerary.days[0].day_date if itinerary.days else 'Calendar'}"
-        )
-        
-        # Post itinerary to the created calendar
-        calendar_result = self.calendar_service.post_itinerary(
-            itinerary, calendar_id, rebuild=False
-        )
-        
-        self.result.calendar_posted = True
-        self.result.calendar_id = calendar_result.calendar_id
-        self.result.events_posted = calendar_result.events_posted
-        return True
-
-    def rebuild(self, confirm: bool = True) -> bool:
-        """Rebuild: Regenerate affected calendar days.
-        
-        Args:
-            confirm: If False, only calculate impact without applying
-            
-        Returns:
-            True if rebuild was completed successfully
-        """
-        itinerary = self.files.read_itinerary()
-        
-        # Calculate impact
-        impact = self.calendar_service.calculate_rebuild_impact(
-            itinerary, "default-calendar"
-        )
-        
-        if not confirm:
-            # Just report impact
-            return True
-        
-        # Confirm and rebuild
-        calendar_result = self.calendar_service.confirm_and_rebuild(
-            itinerary, "default-calendar", impact
-        )
-        
-        self.result.calendar_posted = True
-        self.result.events_posted = calendar_result.events_posted + calendar_result.events_updated
-        return True
-
     # =========================================================================
     # End-to-End Pipeline
     # =========================================================================
@@ -254,13 +185,11 @@ class TravelMinionOrchestrator:
     def run_full_pipeline(
         self,
         freeform_prompt: str,
-        auto_confirm: bool = True,
     ) -> PipelineResult:
-        """Run the entire pipeline from blank folder to posted calendar.
+        """Run the entire pipeline from blank folder to itinerary.
         
         Args:
             freeform_prompt: User's initial trip description
-            auto_confirm: If True, proceed through all phases without pauses
             
         Returns:
             PipelineResult with summary of what was accomplished
@@ -287,12 +216,26 @@ class TravelMinionOrchestrator:
                 self.result.errors = errors
                 return self.result
             
-            # Phase 4: Post
-            if not self.phase4_post(confirm=auto_confirm):
-                errors.append("Calendar posting failed or declined")
+            self.result.errors = errors
+            return self.result
+            
+        except Exception as e:
+            errors.append(str(e))
+            self.result.errors = errors
+            return self.result
+            
+            # Phase 2: Research
+            if not self.phase2_research():
+                errors.append("Research failed")
                 self.result.errors = errors
                 return self.result
-                
+            
+            # Phase 3: Plan
+            if not self.phase3_plan():
+                errors.append("Planning failed")
+                self.result.errors = errors
+                return self.result
+            
         except Exception as e:
             errors.append(str(e))
         

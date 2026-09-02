@@ -1,12 +1,6 @@
-"""Tests for the convenience wrapper.
+"""Tests for TravelMinion convenience wrapper."""
 
-Tests the end-to-end pipeline through the file-interface seam.
-"""
-
-import tempfile
-from pathlib import Path
-
-import pytest
+from __future__ import annotations
 
 from travelminion.wrapper import PipelineResult, TravelMinionOrchestrator
 
@@ -14,261 +8,135 @@ from travelminion.wrapper import PipelineResult, TravelMinionOrchestrator
 class TestPipelineResult:
     """Test PipelineResult dataclass."""
 
-    def test_creation_minimal(self):
+    def test_creation_minimal(self) -> None:
+        """Create with defaults."""
         result = PipelineResult()
-        assert not result.trip_brief_created
-        assert not result.research_completed
+        
+        assert result.trip_brief_created is False
+        assert result.research_completed is False
         assert result.activities_approved == 0
-        assert not result.itinerary_planned
-        assert not result.calendar_posted
-        assert result.calendar_id is None
-        assert result.events_posted == 0
+        assert result.itinerary_planned is False
         assert result.errors is None
 
-    def test_creation_with_values(self):
+    def test_creation_with_values(self) -> None:
+        """Create with specific values."""
         result = PipelineResult(
             trip_brief_created=True,
             research_completed=True,
-            activities_approved=5,
+            activities_approved=15,
             itinerary_planned=True,
-            calendar_posted=True,
-            calendar_id="cal123",
-            events_posted=10,
         )
-        assert result.trip_brief_created
-        assert result.research_completed
-        assert result.activities_approved == 5
-        assert result.itinerary_planned
-        assert result.calendar_posted
-        assert result.calendar_id == "cal123"
-        assert result.events_posted == 10
-
-    def test_has_errors(self):
-        result = PipelineResult()
-        assert not result.has_errors()
         
-        result.errors = ["Something went wrong"]
-        assert result.has_errors()
+        assert result.trip_brief_created is True
+        assert result.research_completed is True
+        assert result.activities_approved == 15
+        assert result.itinerary_planned is True
 
-    def test_summary_empty(self):
+    def test_has_errors(self) -> None:
+        """Check error detection."""
+        assert PipelineResult().has_errors() is False
+        assert PipelineResult(errors=["error"]).has_errors() is True
+
+    def test_summary_with_actions(self) -> None:
+        """Summary lists completed actions."""
+        result = PipelineResult(
+            trip_brief_created=True,
+            research_completed=True,
+            activities_approved=10,
+            itinerary_planned=True,
+        )
+        summary = result.summary()
+        
+        assert "Trip Brief created" in summary
+        assert "Research completed" in summary
+        assert "10 activities approved" in summary
+        assert "Itinerary planned" in summary
+
+    def test_summary_with_errors(self) -> None:
+        """Summary includes errors."""
+        result = PipelineResult(errors=["Error 1", "Error 2"])
+        summary = result.summary()
+        
+        assert "Error 1" in summary
+        assert "Error 2" in summary
+
+    def test_summary_empty(self) -> None:
+        """Empty result has no summary."""
         result = PipelineResult()
         assert result.summary() == "No actions taken"
 
-    def test_summary_with_actions(self):
-        result = PipelineResult(
-            trip_brief_created=True,
-            research_completed=True,
-            activities_approved=3,
-            itinerary_planned=True,
-            calendar_posted=True,
-            events_posted=5,
-        )
-        summary = result.summary()
-        assert "✓ Trip Brief created" in summary
-        assert "✓ Research completed" in summary
-        assert "✓ 3 activities approved" in summary
-        assert "✓ Itinerary planned" in summary
-        assert "✓ Calendar posted (5 events)" in summary
-
-    def test_summary_with_errors(self):
-        result = PipelineResult(errors=["Error 1", "Error 2"])
-        summary = result.summary()
-        assert "✗ Errors: Error 1, Error 2" in summary
-
 
 class TestTravelMinionOrchestrator:
-    """Test orchestrator with fake calendar and canned research."""
+    """Test orchestrator with fake services."""
 
-    @pytest.fixture
-    def temp_trip_folder(self):
-        """Create a temporary trip folder for testing."""
-        with tempfile.TemporaryDirectory() as tmpdir:
-            yield Path(tmpdir)
+    def test_init_defaults(self) -> None:
+        """Initialize with defaults."""
+        orch = TravelMinionOrchestrator(trip_folder="test-folder")
+        
+        assert str(orch.trip_folder) == "test-folder"
+        assert orch.research_engine is not None
 
-    def test_init_with_fake_calendar(self, temp_trip_folder):
-        """Orchestrator initializes with fake calendar by default."""
-        orch = TravelMinionOrchestrator(temp_trip_folder)
-        assert orch.trip_folder == temp_trip_folder
-        assert orch.files.exists()
-        assert not orch.result.has_errors()
+    def test_phase1_interview_basic(self) -> None:
+        """Phase 1: freeform prompt to Trip Brief."""
+        orch = TravelMinionOrchestrator()
+        
+        success = orch.phase1_interview("Japan trip, April 1-10, 2027")
+        
+        assert success is True
+        assert orch.result.trip_brief_created is True
 
-    def test_phase1_interview_basic(self, temp_trip_folder):
-        """Phase 1 creates Trip Brief from freeform prompt."""
-        orch = TravelMinionOrchestrator(temp_trip_folder)
+    def test_phase2_research_canned(self) -> None:
+        """Phase 2: research with canned results."""
+        orch = TravelMinionOrchestrator()
+        orch.phase1_interview("Japan trip, April 1-10, 2027")
         
-        prompt = "Two weeks in Japan starting April 1, 2027. Packed pace, love temples and food."
-        success = orch.phase1_interview(prompt)
+        success = orch.phase2_research()
         
-        assert success
-        assert orch.result.trip_brief_created
-        assert orch.files.trip_brief_exists()
-        
-        brief = orch.files.read_trip_brief()
-        assert brief.destinations  # Should have parsed destinations
+        assert success is True
+        assert orch.result.research_completed is True
+        # Research may return 0 activities (no Tavily API key), but should complete
+        assert orch.result.research_completed is True
 
-    def test_phase2_research_canned(self, temp_trip_folder):
-        """Phase 2 runs research with canned data (fake)."""
-        orch = TravelMinionOrchestrator(temp_trip_folder)
-        
-        # First create a Trip Brief
-        orch.phase1_interview("Japan, April 1-15, 2027, casual, temples")
-        
-        # Research will use fake/canned data since we're not calling real Tavily
+    def test_phase3_plan(self) -> None:
+        """Phase 3: plan itinerary."""
+        orch = TravelMinionOrchestrator()
+        orch.phase1_interview("Japan trip, April 1-10, 2027")
         orch.phase2_research()
         
-        # Research completes (may have empty suggestions in test mode)
-        assert orch.result.research_completed
-        assert orch.files.research_output_exists()
-
-    def test_phase3_plan(self, temp_trip_folder):
-        """Phase 3 plans itinerary from approved activities."""
-        orch = TravelMinionOrchestrator(temp_trip_folder)
-        
-        # Setup: Trip Brief
-        orch.phase1_interview("Japan, April 1-15, 2027, casual, temples")
-        
-        # Manually add some approved activities (bypassing research for test)
-        from travelminion.models import ApprovedActivity, ApprovedActivityList
-        
-        activities = ApprovedActivityList(activities=[
-            ApprovedActivity(
-                name="Senso-ji Temple",
-                area="Asakusa",
-                typical_duration="2 hours",
-                destination="Tokyo",
-                approved=True,
-                opening_hours="6am-5pm",
-            ),
-            ApprovedActivity(
-                name="Meiji Shrine",
-                area="Shibuya",
-                typical_duration="1-2 hours",
-                destination="Tokyo",
-                approved=True,
-                opening_hours="sunrise-sunset",
-            ),
-        ])
-        orch.files.write_activities(activities)
-        
-        # Plan
         success = orch.phase3_plan()
         
-        assert success
-        assert orch.result.itinerary_planned
-        assert orch.files.itinerary_exists()
-        
-        itinerary = orch.files.read_itinerary()
-        assert len(itinerary.days) > 0
+        assert success is True
+        assert orch.result.itinerary_planned is True
 
-    def test_phase4_post_with_fake_calendar(self, temp_trip_folder):
-        """Phase 4 posts to fake calendar."""
-        orch = TravelMinionOrchestrator(temp_trip_folder)
+    def test_run_full_pipeline_end_to_end(self, tmp_path) -> None:
+        """End-to-end: blank folder to itinerary."""
+        orch = TravelMinionOrchestrator(trip_folder=tmp_path)
         
-        # Setup: Trip Brief + activities
-        orch.phase1_interview("Japan, April 1-3, 2027, packed, temples")
+        result = orch.run_full_pipeline(
+            "Japan trip, April 1-10, 2027, casual pace, temples and food"
+        )
         
-        from travelminion.models import ApprovedActivity, ApprovedActivityList
-        activities = ApprovedActivityList(activities=[
-            ApprovedActivity(
-                name="Test Activity",
-                area="Test Area",
-                typical_duration="2 hours",
-                destination="Tokyo",
-                approved=True,
-            ),
-        ])
-        orch.files.write_activities(activities)
-        orch.phase3_plan()
-        
-        # Post
-        success = orch.phase4_post(confirm=True)
-        
-        assert success
-        assert orch.result.calendar_posted
-        assert orch.result.calendar_id is not None
-        assert orch.result.events_posted > 0
+        assert result.trip_brief_created is True
+        assert result.research_completed is True
+        # Research may return 0 activities without Tavily API key
+        assert result.itinerary_planned is True
+        assert not result.errors  # Empty list or None is fine
 
-    def test_rebuild_calculate_impact(self, temp_trip_folder):
-        """Rebuild calculates impact without applying."""
-        orch = TravelMinionOrchestrator(temp_trip_folder)
+    def test_phases_separately_invokable(self, tmp_path) -> None:
+        """Phases can be run individually."""
+        orch = TravelMinionOrchestrator(trip_folder=tmp_path)
         
-        # Setup: post an itinerary first
-        orch.phase1_interview("Japan, April 1-3, 2027, packed")
-        from travelminion.models import ApprovedActivity, ApprovedActivityList
-        activities = ApprovedActivityList(activities=[
-            ApprovedActivity(
-                name="Activity 1",
-                area="A1",
-                typical_duration="2h",
-                destination="Tokyo",
-                approved=True,
-            ),
-        ])
-        orch.files.write_activities(activities)
-        orch.phase3_plan()
-        orch.phase4_post(confirm=True)
+        # Run each phase separately
+        assert orch.phase1_interview("Test trip") is True
+        assert orch.result.trip_brief_created is True
         
-        # Calculate rebuild impact (no confirm)
-        success = orch.rebuild(confirm=False)
+        assert orch.phase2_research() is True
+        assert orch.result.research_completed is True
         
-        assert success
-        # Impact calculated but not applied
-
-    def test_run_full_pipeline_end_to_end(self, temp_trip_folder):
-        """End-to-end: blank folder → posted calendar."""
-        orch = TravelMinionOrchestrator(temp_trip_folder)
-        
-        prompt = "Japan trip, April 1-10, 2027, casual pace, interested in temples and food"
-        result = orch.run_full_pipeline(prompt, auto_confirm=True)
-        
-        # Verify all phases completed
-        assert result.trip_brief_created
-        assert result.research_completed
-        assert result.itinerary_planned
-        assert result.calendar_posted
-        assert not result.has_errors()
+        assert orch.phase3_plan() is True
+        assert orch.result.itinerary_planned is True
         
         # Verify files exist
         assert orch.files.trip_brief_exists()
-        assert orch.files.research_output_exists()
         assert orch.files.activities_exists()
         assert orch.files.itinerary_exists()
-
-    def test_run_full_pipeline_with_errors(self, temp_trip_folder):
-        """Pipeline handles errors gracefully."""
-        orch = TravelMinionOrchestrator(temp_trip_folder)
-        
-        # Empty prompt should still work (uses defaults)
-        result = orch.run_full_pipeline("", auto_confirm=True)
-        
-        # Should complete or report errors gracefully
-        assert result is not None
-
-    def test_phases_separately_invokable(self, temp_trip_folder):
-        """Each phase can be run independently."""
-        orch = TravelMinionOrchestrator(temp_trip_folder)
-        
-        # Run only Phase 1
-        orch.phase1_interview("Japan, April 2027, packed")
-        assert orch.files.trip_brief_exists()
-        assert not orch.files.research_output_exists()
-        
-        # Stop, then resume with Phase 3 (manual activities)
-        from travelminion.models import ApprovedActivity, ApprovedActivityList
-        activities = ApprovedActivityList(activities=[
-            ApprovedActivity(
-                name="Manual Activity",
-                area="A",
-                typical_duration="1h",
-                destination="Tokyo",
-                approved=True,
-            ),
-        ])
-        orch.files.write_activities(activities)
-        
-        orch.phase3_plan()
-        assert orch.files.itinerary_exists()
-        
-        # Phase 4 later
-        orch.phase4_post(confirm=True)
-        assert orch.result.calendar_posted

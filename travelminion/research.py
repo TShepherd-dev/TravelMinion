@@ -356,6 +356,28 @@ class ResearchEngine:
         
         return suggestions
 
+    def research_all(self, trip_brief) -> list[Suggestion]:
+        """Research all destinations in a trip brief.
+        
+        Args:
+            trip_brief: TripBrief with destinations list
+            
+        Returns:
+            Combined list of all Suggestions from all destinations
+        """
+        all_suggestions: list[Suggestion] = []
+        
+        for dest_stop in trip_brief.destinations:
+            suggestions = self.research_destination(
+                dest_stop.destination,
+                trip_brief.interests,
+                dest_stop.days,
+            )
+            all_suggestions.extend(suggestions)
+        
+        return all_suggestions
+
+
     def _enrich_with_jina(self, results: list[RawResult]) -> list[RawResult]:
         """Fetch full content via Jina for richer extraction."""
         enriched: list[RawResult] = []

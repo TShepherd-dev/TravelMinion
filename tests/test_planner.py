@@ -312,8 +312,8 @@ class TestItineraryPlanner:
         assert date_range is not None
         start, end = date_range
         assert start == date(2027, 4, 1)
-        # 3 Tokyo days + 1 travel day + 2 Kyoto days = 6 days total, end is day 5 (0-indexed: days 0-5)
-        assert end == date(2027, 4, 5)
+        # 3 Tokyo days + 1 travel day + 2 Kyoto days = 6 days total
+        assert end == date(2027, 4, 6)
     
     def test_get_day_helper(self):
         """Can retrieve day by date."""
@@ -335,7 +335,176 @@ class TestItineraryPlanner:
         assert day3 is None
 
 
-class TestPlannerWithFileInterface:
+class TestTransitDurationParsing:
+    """Test transit duration string parsing."""
+    
+    def test_flight_duration(self):
+        """Parse 'flight 3h' format."""
+        from travelminion.planner import _parse_transit_duration
+        assert _parse_transit_duration("flight 3h") == 180
+        assert _parse_transit_duration("Flight 2h30m") == 150
+    
+    def test_train_duration(self):
+        """Parse 'train 2h15m' format."""
+        from travelminion.planner import _parse_transit_duration
+        assert _parse_transit_duration("train 2h15m") == 135
+        assert _parse_transit_duration("Train 4 hours") == 240
+    
+    def test_bus_duration(self):
+        """Parse bus duration."""
+        from travelminion.planner import _parse_transit_duration
+        assert _parse_transit_duration("bus 5h") == 300
+        assert _parse_transit_duration("Bus 1h45m") == 105
+    
+    def test_hours_only(self):
+        """Parse hours without minutes."""
+        from travelminion.planner import _parse_transit_duration
+        assert _parse_transit_duration("3h") == 180
+        assert _parse_transit_duration("6 hours") == 360
+    
+    def test_minutes_only(self):
+        """Parse minutes without hours."""
+        from travelminion.planner import _parse_transit_duration
+        assert _parse_transit_duration("45 min") == 45
+        assert _parse_transit_duration("90 minutes") == 90
+    
+    def test_invalid_or_empty(self):
+        """Invalid or empty returns None."""
+        from travelminion.planner import _parse_transit_duration
+        assert _parse_transit_duration(None) is None
+        assert _parse_transit_duration("") is None
+        assert _parse_transit_duration("invalid") is None
+
+
+class TestTravelDaysAndLegs:
+    """Test travel day handling with transit legs."""
+    
+    def create_brief(
+        self,
+        destinations: list[DestinationStop],
+        style: TravelStyle = TravelStyle.CASUAL,
+    ) -> TripBrief:
+        """Helper to create a TripBrief."""
+        return TripBrief(
+            destinations=destinations,
+            start_date=date(2027, 4, 1),
+            end_date=date(2027, 4, sum(d.days for d in destinations) + len(destinations) - 1),
+            interests=["culture", "food"],
+            travel_style=style,
+        )
+    
+    def create_activities(self, activities: list[ApprovedActivity]) -> ApprovedActivityList:
+        """Helper to create an ApprovedActivityList."""
+        return ApprovedActivityList(activities=activities)
+    
+    def test_short_flight_creates_travel_day_with_afternoon(self):
+        """Short flight (<6h) creates TravelDay with afternoon activity."""
+        destinations = [
+            DestinationStop(destination="Paris", days=2, order=0),
+            DestinationStop(destination="Rome", days=2, order=1, transit_from_previous="flight 2h"),
+        ]
+        brief = self.create_brief(destinations)
+        activity_list = self.create_activities([])
+        
+        itinerary = plan_itinerary(brief, activity_list)
+        
+        # Day 3 should be a travel day (0-indexed: day 2)
+        travel_days = [d for d in itinerary.days if isinstance(d, TravelDay)]
+        assert len(travel_days) == 1
+        assert travel_days[0].travel_leg.from_destination == "Paris"
+        assert travel_days[0].travel_leg.to_destination == "Rome"
+        assert travel_days[0].travel_leg.mode == "flight"
+        assert travel_days[0].afternoon_activity is not None
+        assert travel_days[0].afternoon_activity.start_time == time(15, 0)
+        assert travel_days[0].afternoon_activity.end_time == time(17, 0)
+    
+    def test_long_haul_creates_free_day(self):
+        """Long haul (>=6h) creates FreeDay for recovery."""
+        destinations = [
+            DestinationStop(destination="Los Angeles", days=2, order=0),
+            DestinationStop(destination="Tokyo", days=3, order=1, transit_from_previous="flight 11h"),
+        ]
+        brief = self.create_brief(destinations)
+        activity_list = self.create_activities([])
+        
+        itinerary = plan_itinerary(brief, activity_list)
+        
+        # Day 3 should be a free day (0-indexed: day 2)
+        free_days = [d for d in itinerary.days if isinstance(d, FreeDay)]
+        assert len(free_days) >= 1
+        
+        # Find the recovery day
+        recovery_day = None
+        for day in itinerary.days:
+            if isinstance(day, FreeDay) and "Recovery" in (day.notes or ""):
+                recovery_day = day
+                break
+        
+        assert recovery_day is not None
+        assert recovery_day.destination == "Tokyo"
+    
+    def test_train_travel_day(self):
+        """Train transit creates TravelDay (if under 6 hours)."""
+        # Use a shorter train ride that's under the long-haul threshold
+        destinations = [
+            DestinationStop(destination="Paris", days=2, order=0),
+            DestinationStop(destination="Barcelona", days=2, order=1, transit_from_previous="train 5h30m"),
+        ]
+        brief = self.create_brief(destinations)
+        activity_list = self.create_activities([])
+        
+        itinerary = plan_itinerary(brief, activity_list)
+        
+        travel_days = [d for d in itinerary.days if isinstance(d, TravelDay)]
+        assert len(travel_days) == 1
+        assert travel_days[0].travel_leg.mode == "train"
+        assert travel_days[0].afternoon_activity is not None
+    
+    def test_bus_travel_day(self):
+        """Bus transit creates TravelDay."""
+        destinations = [
+            DestinationStop(destination="Tokyo", days=2, order=0),
+            DestinationStop(destination="Kyoto", days=2, order=1, transit_from_previous="bus 5h"),
+        ]
+        brief = self.create_brief(destinations)
+        activity_list = self.create_activities([])
+        
+        itinerary = plan_itinerary(brief, activity_list)
+        
+        travel_days = [d for d in itinerary.days if isinstance(d, TravelDay)]
+        assert len(travel_days) == 1
+        assert travel_days[0].travel_leg.mode == "bus"
+    
+    def test_transit_with_duration_string(self):
+        """Transit leg stores duration string."""
+        destinations = [
+            DestinationStop(destination="London", days=2, order=0),
+            DestinationStop(destination="Amsterdam", days=2, order=1, transit_from_previous="train 4h15m"),
+        ]
+        brief = self.create_brief(destinations)
+        activity_list = self.create_activities([])
+        
+        itinerary = plan_itinerary(brief, activity_list)
+        
+        travel_days = [d for d in itinerary.days if isinstance(d, TravelDay)]
+        assert len(travel_days) == 1
+        # Duration should be stored (without the mode)
+        assert travel_days[0].travel_leg.duration is not None
+    
+    def test_threshold_exactly_6_hours(self):
+        """Exactly 6 hours (360 min) triggers FreeDay."""
+        destinations = [
+            DestinationStop(destination="A", days=1, order=0),
+            DestinationStop(destination="B", days=1, order=1, transit_from_previous="6h"),
+        ]
+        brief = self.create_brief(destinations)
+        activity_list = self.create_activities([])
+        
+        itinerary = plan_itinerary(brief, activity_list)
+        
+        # Should have a free day (recovery)
+        free_days = [d for d in itinerary.days if isinstance(d, FreeDay) and "Recovery" in (d.notes or "")]
+        assert len(free_days) == 1
     """Test planner through the file interface (end-to-end)."""
     
     @pytest.fixture

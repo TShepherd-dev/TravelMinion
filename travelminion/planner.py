@@ -10,6 +10,7 @@ Itinerary respecting:
 
 from __future__ import annotations
 
+import re
 from datetime import date, time, timedelta
 
 from travelminion.models import (
@@ -25,6 +26,36 @@ from travelminion.models import (
     TripBrief,
 )
 
+
+def _parse_transit_duration(transit_str: str | None) -> int | None:
+    """Parse transit duration string to minutes.
+    
+    Examples:
+    - "flight 3h" → 180
+    - "train 2h15m" → 135
+    - "bus 4 hours" → 240
+    - "3h" → 180
+    """
+    if not transit_str:
+        return None
+    
+    transit_str = transit_str.lower().strip()
+    
+    # Try to extract hours and minutes
+    hours_match = re.search(r"(\d+(?:\.\d+)?)\s*(?:h|hour|hours)", transit_str)
+    mins_match = re.search(r"(\d+)\s*(?:m|min|mins|minutes)", transit_str)
+    
+    total_minutes = 0
+    
+    if hours_match:
+        hours = float(hours_match.group(1))
+        total_minutes += int(hours * 60)
+    
+    if mins_match:
+        total_minutes += int(mins_match.group(1))
+    
+    return total_minutes if total_minutes > 0 else None
+
 # Time constants (all in minutes)
 MORNING_START = 9 * 60  # 9:00 AM
 EVENING_END = 18 * 60  # 6:00 PM
@@ -34,6 +65,7 @@ DINNER_START = 17 * 60  # 5:00 PM
 DEFAULT_ACTIVITY_DURATION = 120  # 2 hours
 DEFAULT_TRANSIT = 30  # 30 minutes
 MEAL_BREAK = 60  # 1 hour
+LONG_HAUL_THRESHOLD = 360  # 6 hours - flights or long travel become Free Days
 
 
 def _parse_duration(duration_str: str) -> int:
@@ -101,8 +133,6 @@ def _parse_opening_hours(hours_str: str | None) -> tuple[time, time] | None:
         return None
     
     # Try to parse "Xam-Ypm" or "X:00-Y:00"
-    import re
-    
     pattern = r"(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\s*-\s*"
     pattern += r"(\d{1,2})(?::(\d{2}))?\s*(am|pm)?"
     match = re.match(pattern, hours_str)
@@ -229,11 +259,61 @@ class ItineraryPlanner:
             dest_name = dest_stop.destination
             dest_days = dest_stop.days
             
+            # Handle travel day if this isn't the first destination
+            if dest_idx > 0:
+                prev_dest = sorted_destinations[dest_idx - 1].destination
+                transit_str = dest_stop.transit_from_previous
+                transit_minutes = _parse_transit_duration(transit_str) if transit_str else None
+                
+                # Build travel leg with parsed info
+                mode = None
+                duration_str = None
+                if transit_str:
+                    # Extract mode (flight/train/bus) and duration
+                    mode_pattern = r"^(flight|train|bus|car|ferry|boat)\s*"
+                    mode_match = re.match(mode_pattern, transit_str.lower())
+                    if mode_match:
+                        mode = mode_match.group(1)
+                        duration_str = transit_str[len(mode_match.group(0)):].strip()
+                    else:
+                        duration_str = transit_str
+                
+                travel_leg = TravelLeg(
+                    from_destination=prev_dest,
+                    to_destination=dest_name,
+                    mode=mode,
+                    duration=duration_str,
+                )
+                
+                # Long haul (>6 hours) = Free Day for recovery
+                if transit_minutes and transit_minutes >= LONG_HAUL_THRESHOLD:
+                    days.append(
+                        FreeDay(
+                            date=current_date,
+                            destination=dest_name,
+                            day_type="free",
+                            notes=f"Recovery day after long travel ({transit_str or 'long haul'})",
+                        )
+                    )
+                else:
+                    # Travel day with light afternoon activity
+                    afternoon = self._create_afternoon_activity(current_date, dest_name)
+                    travel_day = TravelDay(
+                        date=current_date,
+                        destination=dest_name,
+                        day_type="travel",
+                        travel_leg=travel_leg,
+                        afternoon_activity=afternoon,
+                    )
+                    days.append(travel_day)
+                
+                current_date += timedelta(days=1)
+            
             # Get approved activities for this destination
             dest_activities = self.activities.by_destination(dest_name)
             
             if not dest_activities:
-                # No activities - create free days
+                # No activities - create free days for the remaining days
                 for _ in range(dest_days):
                     days.append(
                         FreeDay(
@@ -244,25 +324,6 @@ class ItineraryPlanner:
                     )
                     current_date += timedelta(days=1)
                 continue
-            
-            # Handle travel day if this isn't the first destination
-            if dest_idx > 0:
-                prev_dest = sorted_destinations[dest_idx - 1].destination
-                travel_leg = TravelLeg(
-                    from_destination=prev_dest,
-                    to_destination=dest_name,
-                    mode=None,  # User can fill in
-                    duration=None,  # User can fill in
-                )
-                travel_day = TravelDay(
-                    date=current_date,
-                    destination=dest_name,
-                    day_type="travel",
-                    travel_leg=travel_leg,
-                    afternoon_activity=None,  # Can be filled in later
-                )
-                days.append(travel_day)
-                current_date += timedelta(days=1)
             
             # Plan activity days for this destination
             activity_days = self._plan_destination_days(
@@ -374,6 +435,28 @@ class ItineraryPlanner:
                 )
         
         return days
+    
+    def _create_afternoon_activity(self, day_date: date, destination: str) -> TimeBlock | None:
+        """Create a light afternoon/evening activity for a travel day.
+        
+        Returns a simple TimeBlock for a relaxed activity like:
+        - Evening stroll
+        - Local exploration
+        - Dinner at accommodation area
+        """
+        # Light activity from 3pm-5pm (after typical travel/arrival time)
+        start_time = time(15, 0)
+        end_time = time(17, 0)
+        
+        return TimeBlock(
+            start_time=start_time,
+            end_time=end_time,
+            activity_name=f"Explore {destination}",
+            place=destination,
+            duration="2 hours",
+            transit_to_next=None,
+            indoor_fallback=None,
+        )
 
 
 def plan_itinerary(trip_brief: TripBrief, activities: ApprovedActivityList) -> Itinerary:

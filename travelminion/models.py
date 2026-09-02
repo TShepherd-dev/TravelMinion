@@ -49,11 +49,18 @@ class DestinationStop(BaseModel):
     Replaces simple list[str] to allow:
     - Explicit ordering (Japan -> Korea vs Korea -> Japan)
     - Days per destination for research scaling
+    - Optional transit leg from previous destination
     """
 
     destination: str = Field(..., description="Destination name (city/country)")
     days: int = Field(..., ge=1, description="Number of days at this destination")
     order: int | None = Field(None, description="Explicit order (0-indexed, optional)")
+    
+    # Optional transit from the previous destination
+    transit_from_previous: str | None = Field(
+        None,
+        description="Rough transit details from previous destination (e.g., 'flight 3h', 'train 2h15m')"
+    )
 
 
 class TripBrief(BaseModel):
@@ -130,6 +137,7 @@ class TripBrief(BaseModel):
                     destination=d.destination,
                     days=d.days,
                     order=d.order,
+                    transit_from_previous=d.transit_from_previous,
                 )
                 for d in v
             ]

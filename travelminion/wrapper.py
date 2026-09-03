@@ -49,6 +49,32 @@ def load_config() -> dict:
     return {}
 
 
+def get_google_credentials() -> tuple[str | None, str | None]:
+    """Get Google OAuth credentials from config or env vars.
+    
+    Returns:
+        (client_id, client_secret) tuple, both None if not configured
+    """
+    config = load_config()
+    
+    # Try config file first
+    google_config = config.get("google", {})
+    client_id = google_config.get("client_id", "")
+    client_secret = google_config.get("client_secret", "")
+    
+    if client_id and client_secret:
+        return client_id, client_secret
+    
+    # Fallback to environment variables
+    env_id = os.environ.get("GOOGLE_CLIENT_ID", "")
+    env_secret = os.environ.get("GOOGLE_CLIENT_SECRET", "")
+    
+    if env_id and env_secret:
+        return env_id, env_secret
+    
+    return None, None
+
+
 @dataclass
 class PipelineResult:
     """Result of running the full pipeline."""

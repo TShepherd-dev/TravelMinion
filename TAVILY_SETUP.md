@@ -1,60 +1,83 @@
-# Tavily API Key Setup (2 minutes)
+# API Key Setup
 
-## Get Your Free API Key
-
-1. Go to https://app.tavily.com/
-2. Sign up (free tier: 1,000 searches/month)
-3. Copy your API key from the dashboard
-
-## Option 1: File-Based Config (Recommended for Sharing)
+## Configuration File
 
 Edit `travelminion.config.json` in the repo root:
 
 ```json
 {
-  "tavily_api_key": "your-api-key-here"
+  "tavily_api_key": "your-tavily-key-here",
+  "google": {
+    "client_id": "your-google-client-id",
+    "client_secret": "your-google-client-secret"
+  }
 }
 ```
 
 **Benefits:**
+- ✅ All config in one place
 - ✅ Easy to share with team members
 - ✅ No environment variables needed
 - ✅ Works the same on all systems
-- ✅ Can add other config options later
 
-**Important:** This file is in `.gitignore` - don't commit it!
+**Important:** This file is in `.gitignore` - never commit it!
 
-## Option 2: Environment Variable
+---
 
-**Windows (permanent):**
-```powershell
-[Environment]::SetEnvironmentVariable("TAVILY_API_KEY", "your-api-key-here", "User")
-```
+## Tavily API Key (Research)
 
-Then restart terminal/opencode.
+### Get Your Free Key
 
-**Mac/Linux:**
-```bash
-export TAVILY_API_KEY="your-api-key-here"
-```
+1. Go to https://app.tavily.com/
+2. Sign up (free tier: 1,000 searches/month)
+3. Copy your API key
+4. Paste into `travelminion.config.json`
 
-Add to `~/.bashrc` or `~/.zshrc` for permanence.
+### What You Get
 
-## Verify It Works
-
-Run the research phase - it will automatically use:
-1. Key from `travelminion.config.json` (if exists)
-2. Or `TAVILY_API_KEY` environment variable (if set)
-3. Or fall back to DuckDuckGo (no key needed)
-
-## What You Get
-
-With Tavily API key:
+With Tavily key:
 - ✅ Live web search with AI-extracted results
-- ✅ Better opening hours, cost, and detail extraction
-- ✅ More accurate suggestions
+- ✅ Better opening hours, cost, detail extraction
 - ✅ 1,000 free searches/month
 
 Without key:
-- ✅ DuckDuckGo fallback (works, but sparser results)
-- ✅ Jina AI Reader still works for custom URLs
+- ✅ Falls back to DuckDuckGo (works, sparser results)
+
+---
+
+## Google OAuth Credentials (Future Use)
+
+Currently removed, but config is ready if you want to re-add Google Calendar/Docs integration.
+
+### Get Credentials
+
+1. Go to https://console.cloud.google.com/
+2. Create project, enable Calendar/Docs APIs
+3. Create OAuth Desktop app credentials
+4. Copy client ID and secret
+5. Paste into `travelminion.config.json`
+
+### Fallback
+
+Without Google credentials:
+- ✅ Share markdown files directly (email, Slack, Dropbox)
+- ✅ Manual calendar entry (itinerary.md is formatted nicely)
+
+---
+
+## Environment Variables (Alternative)
+
+If you prefer env vars over config file:
+
+**Tavily:**
+```bash
+export TAVILY_API_KEY="your-key"
+```
+
+**Google:**
+```bash
+export GOOGLE_CLIENT_ID="your-id"
+export GOOGLE_CLIENT_SECRET="your-secret"
+```
+
+Config file takes precedence if both are set.

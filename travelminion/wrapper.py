@@ -8,6 +8,8 @@ While keeping all phases separately invokable on demand.
 
 from __future__ import annotations
 
+import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -20,6 +22,31 @@ from travelminion.interview import (
 )
 from travelminion.planner import ItineraryPlanner
 from travelminion.research import ResearchEngine
+
+
+def load_config() -> dict:
+    """Load configuration from travelminion.config.json.
+    
+    Looks in:
+    1. Same directory as this file (installed package)
+    2. Repository root (development)
+    
+    Returns empty dict if file doesn't exist.
+    """
+    config_paths = [
+        Path(__file__).parent.parent / "travelminion.config.json",
+        Path(__file__).parent / "travelminion.config.json",
+    ]
+    
+    for config_path in config_paths:
+        if config_path.exists():
+            try:
+                with open(config_path, "r") as f:
+                    return json.load(f)
+            except (json.JSONDecodeError, IOError):
+                pass
+    
+    return {}
 
 
 @dataclass
@@ -71,8 +98,14 @@ class TravelMinionOrchestrator:
         self.trip_folder = Path(trip_folder) if trip_folder else Path.cwd()
         self.files = TripFiles(self.trip_folder)
         
-        # Inject or default research engine (no Tavily by default - tests use fake)
-        self.research_engine = research_engine or ResearchEngine(tavily_api_key=None)
+        # Load config and initialize research engine with Tavily API key
+        config = load_config()
+        if research_engine is not None:
+            self.research_engine = research_engine
+        else:
+            # Try config file first, then environment variable
+            tavily_key = config.get("tavily_api_key", "") or os.environ.get("TAVILY_API_KEY")
+            self.research_engine = ResearchEngine(tavily_api_key=tavily_key)
         
         self.state: InterviewState | None = None
         self.result = PipelineResult()

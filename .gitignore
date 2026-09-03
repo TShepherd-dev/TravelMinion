@@ -2,6 +2,9 @@
 credentials.json
 token.json
 
+# Config files with API keys
+travelminion.config.json
+
 # Python
 __pycache__/
 *.py[cod]

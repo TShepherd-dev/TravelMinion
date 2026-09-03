@@ -42,7 +42,7 @@ The skill asks targeted follow-up questions for anything missing (destinations, 
 
 ### Phase 2: Research → Suggestions → Approved Activity List
 
-Run research on demand. The skill fetches live destination information and produces Suggestions in `research-output.md`:
+Run research on demand. The skill fetches live destination information and produces Suggestions in `_research-raw.md`:
 
 - Name, rationale (tied to your interests), area, duration
 - Opening hours, approximate cost, season/weather fit
@@ -50,7 +50,7 @@ Run research on demand. The skill fetches live destination information and produ
 
 **Custom sources:** If you provided preferred source URLs, these are fetched first via Jina AI Reader and appear at the top of your suggestions list, marked with `source_name: custom`.
 
-**Collaboration:** Share `research-output.md` with your travel group via email, Slack, Dropbox, etc. They can review the markdown file directly.
+**Collaboration:** Share `_research-raw.md` with your travel group via email, Slack, Dropbox, etc. They can review the markdown file directly.
 
 Review the suggestions, then edit `activities.md`:
 - Set `approved: true` for items you want in the plan
@@ -85,7 +85,7 @@ All trip state lives as plain, human-readable, diff-able Markdown files:
 ```
 YourTrip/
 ├── trip-brief.md        # Your trip parameters (destinations, dates, style)
-├── research-output.md   # Suggestions from live research
+├── _research-raw.md   # Suggestions from live research
 ├── activities.md        # Your approved activity list (you edit this)
 └── itinerary.md         # Day-by-day plan (generated, editable)
 ```

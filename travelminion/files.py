@@ -7,7 +7,7 @@ Files:
 - trip-brief.md: TripBrief
 - activities.md: ApprovedActivityList  
 - itinerary.md: Itinerary
-- research-output.md: list of Suggestions (read-only output)
+- _research-raw.md: list of Suggestions (read-only output)
 """
 
 from __future__ import annotations
@@ -116,7 +116,7 @@ class TripFiles:
     TRIP_BRIEF = "trip-brief.md"
     ACTIVITIES = "activities.md"
     ITINERARY = "itinerary.md"
-    RESEARCH_OUTPUT = "research-output.md"
+    RESEARCH_RAW = "_research-raw.md"  # System output (underscore = internal)
 
     def __init__(self, trip_folder: Path | str) -> None:
         """Initialize with path to Trip folder."""
@@ -459,17 +459,17 @@ class TripFiles:
         return (self.folder / self.ITINERARY).exists()
 
     # =========================================================================
-    # Research Output (read-only, written by research step)
+    # Research Raw (read-only, written by research step)
     # =========================================================================
 
     def read_suggestions(self) -> list[Suggestion]:
-        """Read research-output.md and return list of Suggestions.
+        """Read _research-raw.md and return list of Suggestions.
         
         Raises:
             FileError: If file doesn't exist
             ParseError: If file is malformed
         """
-        data, _ = self._read_file(self.RESEARCH_OUTPUT)
+        data, _ = self._read_file(self.RESEARCH_RAW)
 
         suggestions_data = data.get("suggestions", [])
         if not suggestions_data:
@@ -488,13 +488,13 @@ class TripFiles:
         return suggestions
 
     def write_suggestions(self, suggestions: list[Suggestion]) -> None:
-        """Write research-output.md from a list of Suggestions."""
+        """Write _research-raw.md from a list of Suggestions."""
         data = {"suggestions": [s.model_dump(exclude_none=True) for s in suggestions]}
-        self._write_file(self.RESEARCH_OUTPUT, data)
+        self._write_file(self.RESEARCH_RAW, data)
 
-    def research_output_exists(self) -> bool:
-        """Check if research-output.md exists."""
-        return (self.folder / self.RESEARCH_OUTPUT).exists()
+    def RESEARCH_RAW_exists(self) -> bool:
+        """Check if _research-raw.md exists."""
+        return (self.folder / self.RESEARCH_RAW).exists()
 
     # =========================================================================
     # Utility Methods
@@ -506,7 +506,7 @@ class TripFiles:
             self.TRIP_BRIEF: self.trip_brief_exists(),
             self.ACTIVITIES: self.activities_exists(),
             self.ITINERARY: self.itinerary_exists(),
-            self.RESEARCH_OUTPUT: self.research_output_exists(),
+            self.RESEARCH_RAW: self.RESEARCH_RAW_exists(),
         }
 
     def is_blank(self) -> bool:
@@ -524,7 +524,7 @@ class TripFiles:
             (self.TRIP_BRIEF, self.trip_brief_exists, self.read_trip_brief),
             (self.ACTIVITIES, self.activities_exists, self.read_activities),
             (self.ITINERARY, self.itinerary_exists, self.read_itinerary),
-            (self.RESEARCH_OUTPUT, self.research_output_exists, self.read_suggestions),
+            (self.RESEARCH_RAW, self.RESEARCH_RAW_exists, self.read_suggestions),
         ]:
             if not check_fn():
                 results[filename] = None  # File doesn't exist, no error

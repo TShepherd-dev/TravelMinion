@@ -66,7 +66,7 @@ class TestSeedTemplates:
         assert "trip-brief.md" in created
         assert "activities.md" in created
         assert "itinerary.md" in created
-        assert "research-output.md" in created
+        assert "_research-raw.md" in created
 
         for filename in created:
             assert (tmp_path / filename).exists()
@@ -489,12 +489,12 @@ days:
 
 
 class TestSuggestions:
-    """Test research output (Suggestions) read/write operations."""
+    """Test Research Raw (Suggestions) read/write operations."""
 
     def test_read_suggestions(self, tmp_path: Path) -> None:
         content = """\
 ---
-# Research Output
+# Research Raw
 ---
 suggestions:
   - name: Fushimi Inari Shrine
@@ -515,7 +515,7 @@ suggestions:
     confidence: low
     couldnt_verify: Opening hours not confirmed
 """
-        (tmp_path / "research-output.md").write_text(content)
+        (tmp_path / "_research-raw.md").write_text(content)
 
         files = TripFiles(tmp_path)
         suggestions = files.read_suggestions()
@@ -639,7 +639,7 @@ class TestAllFilesExist:
         assert status["trip-brief.md"] is False
         assert status["activities.md"] is False
         assert status["itinerary.md"] is False
-        assert status["research-output.md"] is False
+        assert status["_research-raw.md"] is False
 
     def test_all_files_exist_after_seeding(self, tmp_path: Path) -> None:
         files = TripFiles(tmp_path)

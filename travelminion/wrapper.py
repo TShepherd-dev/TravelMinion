@@ -149,6 +149,60 @@ class TravelMinionOrchestrator:
         Returns:
             True if Trip Brief was created successfully
         """
+        import sys
+        
+        # Check for existing Trip Brief
+        if self.files.trip_brief_exists():
+            brief = self.files.read_trip_brief()
+            
+            # Only show interactive prompt if stdin is a TTY (not in tests)
+            if sys.stdin.isatty():
+                print("\n⚠️  Existing trip brief found!")
+                print("=" * 50)
+                print(f"Destinations: {[d.destination for d in brief.destinations]}")
+                print(f"Dates: {brief.start_date} to {brief.end_date}")
+                print(f"Travel style: {brief.travel_style.value}")
+                print(f"Interests: {', '.join(brief.interests)}")
+                if brief.budget:
+                    print(f"Budget: {brief.budget}")
+                if brief.group_size:
+                    print(f"Group size: {brief.group_size}")
+                print("=" * 50)
+                print("\nDo you want to: (1) Use this brief, (2) Edit it, or (3) Start over?")
+                print("Type 1, 2, or 3 and press Enter.")
+                
+                choice = input("> ").strip()
+                
+                if choice == "3":
+                    # Start over - delete existing
+                    (self.files.folder / self.files.TRIP_BRIEF).unlink()
+                    print("Starting fresh...\n")
+                elif choice == "2":
+                    # Use existing but allow editing - continue to interview
+                    print("Continuing with edits...\n")
+                    # Pre-populate state with existing values
+                    self.state = InterviewState(
+                        destinations=[d.destination for d in brief.destinations],
+                        start_date=brief.start_date,
+                        end_date=brief.end_date,
+                        interests=brief.interests,
+                        travel_style=brief.travel_style.value,
+                        budget=brief.budget,
+                        group_size=brief.group_size,
+                        mobility=brief.mobility,
+                        dietary=brief.dietary,
+                        travellers_to_share=brief.travellers_to_share,
+                    )
+                else:  # choice == "1" or default
+                    # Use as-is
+                    print("Using existing brief.\n")
+                    return True
+            # Non-interactive mode (tests, scripts): just use existing brief
+            else:
+                # Set result to indicate brief was "loaded" (not created)
+                self.result.trip_brief_created = True
+                return True
+        
         # Initialize interview state
         self.state = InterviewState()
         
@@ -192,11 +246,12 @@ class TravelMinionOrchestrator:
         # Run research for each destination
         suggestions = self.research_engine.research_all(brief)
         
-        # Write research output
+        # Write research output (system file - user reviews this)
         self.files.write_suggestions(suggestions)
         
-        # Auto-approve all for the wrapper flow (user can edit after)
-        from travelminion.models import ApprovedActivity
+        # Auto-create activities.md as a starting point (user edits this)
+        # Copies all research suggestions with source="research"
+        from travelminion.models import ApprovedActivity, ApprovedActivityList
         
         activities = [
             ApprovedActivity(
@@ -206,13 +261,12 @@ class TravelMinionOrchestrator:
                 destination=s.destination,
                 approved=True,
                 opening_hours=s.opening_hours,
-                notes=None,
+                notes=s.couldnt_verify,  # Include any verification notes
                 indoor_fallback=None,
+                source="research",
             )
             for s in suggestions
         ]
-        
-        from travelminion.models import ApprovedActivityList
         
         activity_list = ApprovedActivityList(activities=activities)
         self.files.write_activities(activity_list)

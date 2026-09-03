@@ -223,6 +223,7 @@ class ApprovedActivity(BaseModel):
     notes: str | None = Field(None, description="Traveller's notes or rationale")
     destination: str = Field(...)
     approved: bool = Field(True, description="Whether this is approved for planning")
+    source: str = Field("manual", description="Origin: 'manual' (user-added) or 'research'")
 
     # Optional indoor fallback for weather-exposed activities
     indoor_fallback: str | None = Field(

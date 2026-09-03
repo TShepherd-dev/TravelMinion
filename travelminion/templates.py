@@ -130,7 +130,7 @@ days: []
 
 RESEARCH_OUTPUT_TEMPLATE = """\
 ---
-# Research Output
+# Research Raw (Internal)
 # Suggestions from live research + your custom sources.
 # Review and approve items to add to your Activity List.
 ---
@@ -163,5 +163,5 @@ TEMPLATES = {
     "trip-brief.md": TRIP_BRIEF_TEMPLATE,
     "activities.md": ACTIVITIES_TEMPLATE,
     "itinerary.md": ITINERARY_TEMPLATE,
-    "research-output.md": RESEARCH_OUTPUT_TEMPLATE,
+    "_research-raw.md": RESEARCH_OUTPUT_TEMPLATE,
 }
